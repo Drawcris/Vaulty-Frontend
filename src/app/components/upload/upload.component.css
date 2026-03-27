@@ -1,0 +1,156 @@
+:host {
+  display: block;
+}
+
+.upload-action {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.upload-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  border-radius: 16px;
+  padding: 0 18px 0 16px;
+  font-weight: 700;
+  font-size: 18px;
+  color: #1f1f1f !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14), 0 6px 18px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(214, 225, 240, 0.95);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.upload-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.16), 0 12px 24px rgba(15, 23, 42, 0.08);
+  background: #f8fbff !important;
+}
+
+.button-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #111111;
+  font-size: 22px;
+  line-height: 1;
+  transform: none;
+}
+
+.upload-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: min(360px, calc(100vw - 24px));
+  z-index: 5000;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(214, 225, 240, 0.95);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+  padding: 14px 14px 12px;
+}
+
+.upload-toast.success {
+  border-color: rgba(15, 157, 88, 0.28);
+}
+
+.upload-toast.error {
+  border-color: rgba(197, 34, 31, 0.3);
+}
+
+.toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.close-button {
+  width: 32px;
+  height: 32px;
+}
+
+.toast-icon-glyph {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.toast-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.toast-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.toast-file {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-status {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.toast-debug {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-progress {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.progress-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+@media (max-width: 700px) {
+  .upload-button {
+    padding: 0 16px;
+  }
+
+  .upload-toast {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
+}

@@ -1,0 +1,160 @@
+<div class="onboarding-container">
+  <!-- Background with gradient -->
+  <div class="onboarding-background"></div>
+
+  <!-- Content -->
+  <div class="onboarding-content">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo-large">🔐</div>
+      <h1>Witaj w Vaulty</h1>
+      <p class="subtitle">Bezpieczne przechowywanie plików na blockchain</p>
+    </div>
+
+    <!-- Main Section -->
+    <div class="main-section">
+      <div class="warning-box">
+        <div class="warning-icon">ⓘ</div>
+        <div class="warning-content">
+          <h2>MetaMask jest wymagany</h2>
+          <p>
+            Vaulty korzysta z MetaMask do bezpiecznej autentykacji Web3.
+            MetaMask to cyfrowy portfel, który chroni Twoją tożsamość online.
+          </p>
+        </div>
+      </div>
+
+      <!-- Steps -->
+      <div class="steps-section">
+        <h3>Jak zacząć?</h3>
+
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <div class="step-body">
+            <h4>Pobierz MetaMask</h4>
+            <p>MetaMask to bezpieczne rozszerzenie dla Twojej przeglądarki.</p>
+            <button
+              class="action-button primary"
+              (click)="openMetaMaskDownload()"
+            >
+              Pobierz MetaMask
+            </button>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <div class="step-body">
+            <h4>Utwórz konto</h4>
+            <p>Postępuj zgodnie z instrukcjami MetaMask aby stworzyć nowy portfel.</p>
+            <button
+              class="action-button secondary"
+              (click)="openMetaMaskTutorial()"
+            >
+              Poradnik konfiguracji
+            </button>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <div class="step-body">
+            <h4>Zaloguj się do Vaulty</h4>
+            <p>Gdy MetaMask będzie gotowy, kliknij przycisk poniżej aby zalogować się.</p>
+            <button
+              class="action-button primary"
+              (click)="reloadPage()"
+            >
+              Zaloguj się
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Section -->
+      <div class="info-section">
+        <div class="info-card">
+          <div class="info-icon">🔒</div>
+          <h4>Bezpieczeństwo</h4>
+          <p>Wszystkie pliki są szyfrowane end-to-end. Tylko Ty masz dostęp do swoich danych.</p>
+        </div>
+
+        <div class="info-card">
+          <div class="info-icon">🌐</div>
+          <h4>Decentralizacja</h4>
+          <p>Pliki są przechowywane na IPFS - sieci peer-to-peer, bez centralnego serwera.</p>
+        </div>
+
+        <div class="info-card">
+          <div class="info-icon">🔐</div>
+          <h4>Web3 Autentykacja</h4>
+          <p>Logowanie za pomocą portfela - bez hasła, bez maila, tylko Twoja tożsamość.</p>
+        </div>
+      </div>
+
+      <!-- FAQ Section -->
+      <div class="faq-section">
+        <h3>Pytania i odpowiedzi</h3>
+
+        <details class="faq-item">
+          <summary>Co to jest MetaMask?</summary>
+          <p>
+            MetaMask to rozszerzenie przeglądarki, które działuje jak portfel cyfrowy.
+            Pozwala ci bezpiecznie zarządzać swoją tożsamością i pieniędzmi w internecie.
+          </p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Czy MetaMask jest bezpieczny?</summary>
+          <p>
+            Tak! MetaMask jest jednym z najpopularniejszych i najbardziej zaufanych portfeli Web3.
+            Masz całkowitą kontrolę nad swoimi kluczami prywatnymi.
+          </p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Czy to kosztuje?</summary>
+          <p>
+            MetaMask jest całkowicie darmowy. Vaulty także jest darmowe.
+            Mogą pojawić się opłaty sieciowe (gas fees) przy niektórych operacjach blockchain, ale to nie dotyczy przechowywania plików.
+          </p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Czy mogę usunąć moje dane?</summary>
+          <p>
+            Tak! Twoje dane znajdują się na IPFS i możesz je usunąć w każdej chwili.
+            Usunięcie metadanych z bazy danych Vaulty usunie połączenie z plikami.
+          </p>
+        </details>
+
+        <details class="faq-item">
+          <summary>Jak się rejestruję?</summary>
+          <p>
+            Nie ma tradycyjnej rejestracji. Wystarczy, że się zaloguj za pomocą MetaMask!
+            Automatycznie stworzymy Twoje konto na podstawie Twojego adresu portfela.
+          </p>
+        </details>
+      </div>
+
+      <!-- Web3 Learning -->
+      <div class="learning-section">
+        <h3>Chcesz dowiedzieć się więcej?</h3>
+        <p>Zapoznaj się z koncepcjami Web3 i blockchain:</p>
+        <button
+          class="learn-button"
+          (click)="openWeb3Guide()"
+        >
+          Przewodnik Ethereum & Web3
+        </button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="onboarding-footer">
+      <p>Vaulty - Praca magisterska • Maciej Małutowski</p>
+      <p style="font-size: 12px; color: rgba(255, 255, 255, 0.6);">v1.0.0</p>
+    </div>
+  </div>
+</div>
+

@@ -1,0 +1,122 @@
+<div>
+  @if (!isMetaMaskInstalled) {
+    <app-metamask-onboarding></app-metamask-onboarding>
+  }
+
+  @if (isMetaMaskInstalled) {
+    <div class="login-page">
+      <div class="left-panel">
+        <div class="branding">
+          <div class="logo-icon" aria-hidden="true">&#128274;</div>
+          <h1>Vaulty</h1>
+          <p class="tagline">Bezpieczne przechowywanie plików<br>z szyfrowaniem end-to-end</p>
+        </div>
+
+        <div class="footer-left">
+          <p>Praca magisterska<br><strong>Maciej Malutowski</strong></p>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="login-form">
+          <h2>Zaloguj się</h2>
+          <p class="form-subtitle">Połącz swój portfel Web3, aby uzyskać dostęp</p>
+
+          @if (showError && getErrorMessage()) {
+            <div class="error-message">
+              <mat-icon>error_outline</mat-icon>
+              <span>{{ getErrorMessage() }}</span>
+            </div>
+          }
+
+          @if (!walletState.isConnected) {
+            <button
+              (click)="onConnectWallet()"
+              [disabled]="authState.loading"
+              class="login-button"
+            >
+              @if (authState.loading) {
+                <mat-spinner diameter="18"></mat-spinner>
+                <span>Łączenie...</span>
+              } @else {
+                <span>&#129418; Połącz MetaMask</span>
+              }
+            </button>
+          }
+
+          @if (walletState.isConnected && !authState.isAuthenticated) {
+            <div class="wallet-connected">
+              <div class="wallet-address-display">
+                <div class="wallet-avatar" aria-hidden="true">
+                  {{ walletState.address?.substring(2, 4)?.toUpperCase() || 'W' }}
+                </div>
+                <div class="address-info">
+                  <div class="address-label">Portfel</div>
+                  <div class="address-value">{{ formatAddress(walletState.address) }}</div>
+                </div>
+              </div>
+
+              <button
+                (click)="onLogin()"
+                [disabled]="authState.loading"
+                class="login-button"
+              >
+                @if (authState.loading) {
+                  <mat-spinner diameter="18"></mat-spinner>
+                  <span>Podpisywanie...</span>
+                } @else {
+                  <span>&#9997;&#65039; Podpisz wyzwanie</span>
+                }
+              </button>
+
+              <button
+                (click)="onDisconnect()"
+                class="disconnect-button"
+              >
+                Rozłącz portfel
+              </button>
+            </div>
+          }
+
+          @if (authState.isAuthenticated) {
+            <div class="authenticated-message">
+              <mat-icon>check_circle</mat-icon>
+              <h3>Logowanie powiodło się!</h3>
+              <p>Przenoszenie do Twojej biblioteki plików...</p>
+              <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+            </div>
+          }
+
+          @if (!authState.isAuthenticated) {
+            <div class="info-section">
+              <h3>Jak to działa?</h3>
+              <div class="steps">
+                <div class="step">
+                  <div class="step-number">1</div>
+                  <div class="step-content">
+                    <strong>Połącz portfel</strong>
+                    <p>Zaakceptuj połączenie MetaMask z Vaulty</p>
+                  </div>
+                </div>
+                <div class="step">
+                  <div class="step-number">2</div>
+                  <div class="step-content">
+                    <strong>Podpisz wyzwanie</strong>
+                    <p>Potwierdź posiadanie portfela poprzez podpis</p>
+                  </div>
+                </div>
+                <div class="step">
+                  <div class="step-number">3</div>
+                  <div class="step-content">
+                    <strong>Wejdź do aplikacji</strong>
+                    <p>Po pierwszym logowaniu ustawisz username w aplikacji</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

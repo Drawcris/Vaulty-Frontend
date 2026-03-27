@@ -1,0 +1,47 @@
+<div class="upload-action">
+  <input #fileInput type="file" (change)="onFileSelected($event)" [disabled]="isUploading" hidden />
+
+  <button mat-flat-button color="primary" class="upload-button" (click)="fileInput.click()" [disabled]="isUploading" matTooltip="Dodaj nowy plik">
+    <mat-icon class="button-icon">add</mat-icon>
+    <span>Nowy plik</span>
+  </button>
+</div>
+
+@if (showToast) {
+  <div class="upload-toast" [class.error]="!!uploadError" [class.success]="!!uploadMessage && !uploadError">
+    <div class="toast-header">
+      <span>{{ uploadError ? 'Błąd uploadu' : 'Przesyłanie pliku' }}</span>
+      <button mat-icon-button class="close-button" (click)="closeToast()" [disabled]="isUploading" matTooltip="Zamknij powiadomienie">
+        <mat-icon class="toast-icon-glyph">close</mat-icon>
+      </button>
+    </div>
+
+    <div class="toast-body">
+      <div class="toast-copy">
+        <div class="toast-file">{{ activeFileName }}</div>
+        <div class="toast-status">
+          @if (uploadError) {
+            {{ uploadError }}
+          } @else if (uploadMessage) {
+            {{ uploadMessage }}
+          } @else {
+            {{ progressLabel }}
+          }
+        </div>
+        @if (lastDebugFileName && !uploadError) {
+          <div class="toast-debug">Kopia testowa: {{ lastDebugFileName }}</div>
+        }
+      </div>
+
+      <div class="toast-progress">
+        <mat-progress-spinner
+          mode="determinate"
+          [value]="uploadError ? 100 : progressValue"
+          [diameter]="42"
+          [strokeWidth]="4">
+        </mat-progress-spinner>
+        <span class="progress-text">{{ uploadError ? '!' : progressValue + '%' }}</span>
+      </div>
+    </div>
+  </div>
+}

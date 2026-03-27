@@ -1,0 +1,245 @@
+<mat-card class="files-list-card">
+  <div class="list-header">
+    <div class="toolbar-main">
+      <label class="search-shell" aria-label="Szukaj plików">
+        <mat-icon class="toolbar-icon">search</mat-icon>
+        <input
+          type="text"
+          [(ngModel)]="searchTerm"
+          (ngModelChange)="onSearchTermChange()"
+          placeholder="Szukaj po nazwie, CID lub szyfrowaniu" />
+      </label>
+
+      <mat-form-field appearance="outline" class="sort-field">
+        <mat-select
+          [(ngModel)]="sortOption"
+          (selectionChange)="onSortChange()"
+          aria-label="Sortowanie plików">
+          <mat-option value="newest">Najnowsze</mat-option>
+          <mat-option value="oldest">Najstarsze</mat-option>
+          <mat-option value="name-asc">Nazwa A-Z</mat-option>
+          <mat-option value="name-desc">Nazwa Z-A</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <div class="results-pill">
+        {{ visibleCount() }} wynik{{ visibleCount() === 1 ? '' : visibleCount() < 5 ? 'i' : 'ów' }}
+      </div>
+    </div>
+
+    <div class="header-actions">
+      @if (selectedCount()) {
+        <div class="selection-bar">
+          <span class="selection-count">{{ selectedCount() }}</span>
+          <button
+            mat-icon-button
+            class="selection-icon-button"
+            (click)="clearSelection()"
+            [disabled]="isDeleting"
+            matTooltip="Wyczyść zaznaczenie"
+            aria-label="Wyczyść zaznaczenie">
+            <mat-icon class="icon-glyph">close</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            class="selection-icon-button danger"
+            (click)="deleteSelected()"
+            [disabled]="isDeleting"
+            matTooltip="Usuń zaznaczone pliki"
+            aria-label="Usuń zaznaczone">
+            <mat-icon class="icon-glyph">delete</mat-icon>
+          </button>
+        </div>
+      }
+
+      <button
+        mat-icon-button
+        class="refresh-button"
+        (click)="loadFiles()"
+        [disabled]="isLoading || isDeleting"
+        matTooltip="Odśwież listę plików"
+        aria-label="Odśwież listę plików">
+        <mat-icon>refresh</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  @if (isLoading) {
+    <div class="list-state">
+      <mat-spinner diameter="26"></mat-spinner>
+      <span>Pobieranie plików...</span>
+    </div>
+  } @else if (errorMessage) {
+    <div class="list-state error">
+      <mat-icon>error_outline</mat-icon>
+      <span>{{ errorMessage }}</span>
+    </div>
+  } @else if (!files.length) {
+    <div class="list-state empty">
+      <mat-icon class="empty-icon">folder_open</mat-icon>
+      <span>Nie masz jeszcze żadnych plików.</span>
+    </div>
+  } @else if (!filteredFiles().length) {
+    <div class="list-state empty">
+      <mat-icon class="empty-icon">search_off</mat-icon>
+      <span>Brak plików pasujących do wyszukiwania.</span>
+    </div>
+  } @else {
+    <div class="files-grid">
+      <div class="files-grid-header">
+        <div class="select-column">
+          <mat-checkbox
+            [checked]="areAllSelected()"
+            [indeterminate]="selectedCount() > 0 && !areAllSelected()"
+            (change)="toggleSelectAll($event.checked)">
+          </mat-checkbox>
+        </div>
+        <div class="name-column">Nazwa</div>
+        <div class="cid-column">CID</div>
+        <div class="encryption-column">Szyfrowanie</div>
+        <div class="date-column">Dodano</div>
+        <div class="owner-column">Właściciel</div>
+        <div class="actions-column"></div>
+      </div>
+
+      @for (file of pagedFiles(); track trackByFileId($index, file)) {
+        <div
+          class="file-row"
+          [class.selected-row]="isSelected(file.id)"
+          (contextmenu)="onRowRightClick($event, file)">
+          <div class="select-column">
+            <mat-checkbox
+              [checked]="isSelected(file.id)"
+              (click)="$event.stopPropagation()"
+              (change)="toggleSelection(file.id, $event.checked)">
+            </mat-checkbox>
+          </div>
+
+          <div class="name-column file-main">
+            <mat-icon class="file-icon">description</mat-icon>
+            <div class="file-copy">
+              <div class="file-title">{{ getFileLabel(file) }}</div>
+              <div class="file-subtitle">ID rekordu: {{ file.id }}</div>
+            </div>
+          </div>
+
+          <div class="cid-column">
+            <div class="cid-main">{{ shortCid(file.cid) }}</div>
+            <div class="cid-full">{{ file.cid }}</div>
+          </div>
+
+          <div class="encryption-column">
+            <span class="encryption-pill">{{ file.encryption_type }}</span>
+          </div>
+
+          <div class="date-column date-text">{{ formatDate(file.upload_date) }}</div>
+
+          <div class="owner-column owner-text">{{ getOwnerLabel() }}</div>
+
+          <div class="actions-column">
+            <div class="hover-actions">
+              <button
+                mat-icon-button
+                class="row-action"
+                disabled
+                matTooltip="Udostępnij plik"
+                aria-label="Udostępnij">
+                <mat-icon class="icon-glyph">person_add</mat-icon>
+              </button>
+              <button
+                mat-icon-button
+                class="row-action"
+                disabled
+                matTooltip="Pobierz plik"
+                aria-label="Pobierz">
+                <mat-icon class="icon-glyph">download</mat-icon>
+              </button>
+              <button
+                mat-icon-button
+                class="row-action"
+                (click)="renameOne(file)"
+                matTooltip="Zmień nazwę pliku"
+                aria-label="Zmień nazwę">
+                <mat-icon class="icon-glyph">edit</mat-icon>
+              </button>
+              <button
+                mat-icon-button
+                class="row-action danger"
+                (click)="deleteOne(file)"
+                [disabled]="isDeleting"
+                matTooltip="Usuń plik"
+                aria-label="Usuń">
+                <mat-icon class="icon-glyph">delete</mat-icon>
+              </button>
+            </div>
+
+            <button
+              mat-icon-button
+              [matMenuTriggerFor]="rowMenu"
+              (click)="openRowMenu(file)"
+              matTooltip="Więcej opcji"
+              aria-label="Więcej opcji">
+              <mat-icon>more_vert</mat-icon>
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+
+    <mat-paginator
+      class="files-paginator"
+      [length]="visibleCount()"
+      [pageIndex]="pageIndex"
+      [pageSize]="pageSize"
+      [pageSizeOptions]="pageSizeOptions"
+      [showFirstLastButtons]="true"
+      (page)="onPageChange($event)">
+    </mat-paginator>
+  }
+
+  <mat-menu #rowMenu="matMenu">
+    <button mat-menu-item disabled>
+      <mat-icon class="menu-item-icon">person_add</mat-icon>
+      <span>Udostępnij</span>
+    </button>
+    <button mat-menu-item disabled>
+      <mat-icon class="menu-item-icon">download</mat-icon>
+      <span>Pobierz</span>
+    </button>
+    <button mat-menu-item (click)="renameOne(activeMenuFile!)" [disabled]="!activeMenuFile">
+      <mat-icon class="menu-item-icon">edit</mat-icon>
+      <span>Zmień nazwę</span>
+    </button>
+    <button mat-menu-item (click)="deleteOne(activeMenuFile!)" [disabled]="!activeMenuFile || isDeleting">
+      <mat-icon class="menu-item-icon danger-icon">delete</mat-icon>
+      <span>Usuń</span>
+    </button>
+  </mat-menu>
+
+  <div
+    #contextMenuTrigger="matMenuTrigger"
+    class="context-anchor"
+    [style.left]="contextMenuPosition.x"
+    [style.top]="contextMenuPosition.y"
+    [matMenuTriggerFor]="contextMenu">
+  </div>
+
+  <mat-menu #contextMenu="matMenu">
+    <button mat-menu-item disabled>
+      <mat-icon class="menu-item-icon">person_add</mat-icon>
+      <span>Udostępnij</span>
+    </button>
+    <button mat-menu-item disabled>
+      <mat-icon class="menu-item-icon">download</mat-icon>
+      <span>Pobierz</span>
+    </button>
+    <button mat-menu-item (click)="renameOne(activeMenuFile!)" [disabled]="!activeMenuFile">
+      <mat-icon class="menu-item-icon">edit</mat-icon>
+      <span>Zmień nazwę</span>
+    </button>
+    <button mat-menu-item (click)="deleteOne(activeMenuFile!)" [disabled]="!activeMenuFile || isDeleting">
+      <mat-icon class="menu-item-icon danger-icon">delete</mat-icon>
+      <span>Usuń</span>
+    </button>
+  </mat-menu>
+</mat-card>
