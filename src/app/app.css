@@ -18,11 +18,55 @@ app-root {
   height: 100%;
 }
 
-.route-shell {
-  position: relative;
-  min-height: 100%;
-  isolation: isolate;
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   overflow: hidden;
+}
+
+.route-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+  isolation: isolate;
+}
+
+.app-footer {
+  flex-shrink: 0;
+  z-index: 1000;
+  padding: 12px 24px;
+  background-color: #f8f9fa;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 1400px;
+}
+
+.footer-text strong {
+  font-weight: 600;
+  color: #3c4043;
+}
+
+.footer-version {
+  font-family: 'Roboto Mono', monospace;
+  background: #e8eaed;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1a73e8;
 }
 
 .app-loader-backdrop {

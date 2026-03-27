@@ -1,7 +1,19 @@
-<div class="route-shell" [@routeTransition]="prepareRoute(outlet)">
-  <router-outlet #outlet="outlet"></router-outlet>
-</div>
+<div class="app-container">
+  <div class="route-shell" [@routeTransition]="prepareRoute(outlet)">
+    <router-outlet #outlet="outlet"></router-outlet>
+  </div>
 
+  @if (isAuthenticated$ | async) {
+    <footer class="app-footer">
+      <div class="footer-content">
+        <span class="footer-text">
+          Realizacja projektu w ramach <strong>Pracy Magisterskiej</strong> &copy; 2026
+        </span>
+        <span class="footer-version">Vaulty v{{ appVersion() }}</span>
+      </div>
+    </footer>
+  }
+</div>
 @if (isBootstrapping$ | async) {
   <div class="app-loader-backdrop" aria-live="polite" aria-busy="true">
     <mat-spinner diameter="56"></mat-spinner>

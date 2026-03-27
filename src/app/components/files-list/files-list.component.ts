@@ -19,8 +19,12 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { DeleteConfirmDialogComponent } from './delete-confirm-dialog.component';
 import { RenameFileDialogComponent } from './rename-file-dialog.component';
+import { CreateFolderDialogComponent } from './create-folder-dialog.component';
+import { MoveItemDialogComponent } from './move-item-dialog.component';
+import { FileDetailsDialogComponent } from './file-details-dialog.component';
+
 import { AuthService } from '../../core/services/auth.service';
-import { FilesService, UserFile } from '../../core/services/files.service';
+import { FilesService, UserFile, UserFolder, FolderBreadcrumb } from '../../core/services/files.service';
 import { NotificationService } from '../../core/services/notification.service';
 
 @Component({
@@ -48,13 +52,22 @@ import { NotificationService } from '../../core/services/notification.service';
 export class FilesListComponent implements OnInit, OnDestroy {
   @ViewChild('contextMenuTrigger') contextMenuTrigger?: MatMenuTrigger;
 
+  folders: UserFolder[] = [];
   files: UserFile[] = [];
+  breadcrumbs: FolderBreadcrumb[] = [];
+  currentFolderId: number | null = null;
+
   isLoading = false;
   isDeleting = false;
   errorMessage = '';
-  selectedIds = new Set<number>();
+
+  selectedFileIds = new Set<number>();
+  selectedFolderIds = new Set<number>();
+
   activeMenuFile: UserFile | null = null;
+  activeMenuFolder: UserFolder | null = null;
   contextMenuPosition = { x: '0px', y: '0px' };
+  
   searchTerm = '';
   sortOption: 'newest' | 'oldest' | 'name-asc' | 'name-desc' = 'newest';
   pageSize = 10;
@@ -72,12 +85,12 @@ export class FilesListComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.loadFiles();
+    this.loadContents();
   }
 
   @HostListener('window:vaulty-files-refresh')
   onExternalRefresh(): void {
-    this.loadFiles();
+    this.loadContents();
   }
 
   @HostListener('document:contextmenu', ['$event'])
@@ -93,24 +106,27 @@ export class FilesListComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  loadFiles(): void {
+  loadContents(): void {
     this.isLoading = true;
     this.errorMessage = '';
 
     this.filesService
-      .getMyFiles()
+      .getFolderContents(this.currentFolderId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: files => {
-          this.files = files;
-          this.selectedIds.forEach(id => {
-            if (!files.some(file => file.id === id)) {
-              this.selectedIds.delete(id);
-            }
-          });
-          this.ensureValidPageIndex();
-          this.isLoading = false;
-          this.cdr.detectChanges();
+        next: data => {
+          this.folders = data.folders;
+          this.files = data.files;
+          
+          if (this.currentFolderId) {
+            this.filesService.getBreadcrumbs(this.currentFolderId).subscribe(bc => {
+                 this.breadcrumbs = bc;
+                 this.finalizeLoad();
+            });
+          } else {
+            this.breadcrumbs = [];
+            this.finalizeLoad();
+          }
         },
         error: error => {
           this.errorMessage = this.getReadableError(error);
@@ -121,45 +137,140 @@ export class FilesListComponent implements OnInit, OnDestroy {
       });
   }
 
+  private finalizeLoad(): void {
+    this.selectedFileIds.clear();
+    this.selectedFolderIds.clear();
+    this.ensureValidPageIndex();
+    this.isLoading = false;
+    this.cdr.detectChanges();
+  }
+
+  navigateToFolder(folderId: number | null): void {
+    this.currentFolderId = folderId;
+    this.searchTerm = '';
+    this.pageIndex = 0;
+    this.loadContents();
+    window.dispatchEvent(new CustomEvent('vaulty-folder-changed', { detail: folderId }));
+  }
+
+  goBack(): void {
+     if (this.breadcrumbs.length > 1) {
+         // wroc do przedostatniego
+         const parent = this.breadcrumbs[this.breadcrumbs.length - 2];
+         this.navigateToFolder(parent.id);
+     } else {
+         this.navigateToFolder(null); // wracamy do root
+     }
+  }
+
+  // --- Opcje folderu ---
+  async createFolder(): Promise<void> {
+    const dialogRef = this.dialog.open(CreateFolderDialogComponent, {
+      width: '420px',
+      autoFocus: false
+    });
+    const result = await firstValueFrom(dialogRef.afterClosed());
+    if (result) {
+      try {
+        await firstValueFrom(this.filesService.createFolder(result, this.currentFolderId));
+        this.notificationService.success(`Utworzono folder "${result}"`);
+        this.loadContents();
+      } catch (err) {
+        this.notificationService.error(this.getReadableError(err));
+      }
+    }
+  }
+
+  // --- Drag & Drop ---
+  onDragStart(event: DragEvent, item: any, type: 'file'|'folder') {
+    event.stopPropagation();
+    event.dataTransfer?.setData('application/json', JSON.stringify({ id: item.id, type }));
+  }
+  
+  onDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  
+  onDrop(event: DragEvent, targetFolder: UserFolder | null) {
+    event.preventDefault();
+    event.stopPropagation();
+    const data = event.dataTransfer?.getData('application/json');
+    if (!data) return;
+    const { id, type } = JSON.parse(data);
+    const targetId = targetFolder ? targetFolder.id : null;
+    
+    if (type === 'folder' && targetId === id) return; // ignore drop into itself
+
+    this.filesService.moveItems({
+      target_folder_id: targetId,
+      file_ids: type === 'file' ? [id] : [],
+      folder_ids: type === 'folder' ? [id] : [],
+    }).subscribe({
+        next: () => {
+          this.loadContents();
+          this.notificationService.success('Element pomyślnie przeniesiony.');
+        },
+        error: err => this.notificationService.error(this.getReadableError(err))
+    });
+  }
+
+
+  // --- Narzędzia list ---
   formatDate(value: string): string {
     return new Date(value).toLocaleString('pl-PL');
   }
 
-  filteredFiles(): UserFile[] {
-    const normalizedQuery = this.searchTerm.trim().toLowerCase();
+  filteredFolders(): UserFolder[] {
+      const q = this.searchTerm.trim().toLowerCase();
+      let res = this.folders;
+      if (q) res = res.filter(f => f.name.toLowerCase().includes(q));
+      
+      return res.sort((a,b) => {
+          if (this.sortOption === 'name-desc') return b.name.localeCompare(a.name);
+          return a.name.localeCompare(b.name);
+      });
+  }
 
-    const visibleFiles = normalizedQuery
+  filteredFiles(): UserFile[] {
+    const q = this.searchTerm.trim().toLowerCase();
+    const visibleFiles = q
       ? this.files.filter(file => {
           const label = this.getFileLabel(file).toLowerCase();
-          const cid = file.cid.toLowerCase();
-          const encryption = file.encryption_type.toLowerCase();
-          return (
-            label.includes(normalizedQuery) ||
-            cid.includes(normalizedQuery) ||
-            encryption.includes(normalizedQuery)
-          );
+          return label.includes(q);
         })
       : [...this.files];
 
     return visibleFiles.sort((left, right) => this.compareFiles(left, right));
   }
 
-  pagedFiles(): UserFile[] {
-    const filtered = this.filteredFiles();
-    const start = this.pageIndex * this.pageSize;
-    return filtered.slice(start, start + this.pageSize);
+  pagedItems(): any[] {
+     // Pagujemy wspólnie (foldery na górze, pliki na dole)
+     const all = [...this.filteredFolders().map(f => ({...f, _isFolder: true})), ...this.filteredFiles()];
+     const start = this.pageIndex * this.pageSize;
+     const page = all.slice(start, start + this.pageSize);
+     
+     if (this.currentFolderId !== null && this.pageIndex === 0 && !this.searchTerm.trim()) {
+         const parentId = this.breadcrumbs.length > 1 ? this.breadcrumbs[this.breadcrumbs.length - 2].id : null;
+         const upDir = {
+             id: parentId,
+             name: '..',
+             _isFolder: true,
+             _isUpDir: true,
+             created_at: new Date().toISOString()
+         };
+         return [upDir, ...page];
+     }
+     return page;
   }
 
   visibleCount(): number {
-    return this.filteredFiles().length;
+    return this.filteredFolders().length + this.filteredFiles().length;
   }
 
   shortCid(cid: string): string {
-    if (cid.length <= 28) {
-      return cid;
-    }
-
-    return `${cid.slice(0, 16)}...${cid.slice(-10)}`;
+    if (!cid) return '';
+    return cid.length <= 28 ? cid : `${cid.slice(0, 16)}...${cid.slice(-10)}`;
   }
 
   getFileLabel(file: UserFile): string {
@@ -167,71 +278,66 @@ export class FilesListComponent implements OnInit, OnDestroy {
   }
 
   getOwnerLabel(): string {
-    return this.authService.getUsername() || 'ja';
+    return 'Ty';
   }
 
-  getOwnerInitial(): string {
-    const label = this.getOwnerLabel().trim();
-    return label ? label.charAt(0).toUpperCase() : 'J';
+
+  // --- Selekcja ---
+  isSelected(item: any, isFolder: boolean = false): boolean {
+    return isFolder ? this.selectedFolderIds.has(item.id) : this.selectedFileIds.has(item.id);
   }
 
-  getActivityLabel(file: UserFile): string {
-    return `Otwarty przez Ciebie • ${this.formatDate(file.upload_date)}`;
-  }
-
-  isSelected(fileId: number): boolean {
-    return this.selectedIds.has(fileId);
-  }
-
-  toggleSelection(fileId: number, checked: boolean): void {
-    if (checked) {
-      this.selectedIds.add(fileId);
-    } else {
-      this.selectedIds.delete(fileId);
-    }
+  toggleSelection(item: any, isFolder: boolean, checked: boolean): void {
+    const set = isFolder ? this.selectedFolderIds : this.selectedFileIds;
+    if (checked) set.add(item.id);
+    else set.delete(item.id);
   }
 
   areAllSelected(): boolean {
-    const visibleIds = this.pagedFiles().map(file => file.id);
-    return !!visibleIds.length && visibleIds.every(id => this.selectedIds.has(id));
+    const visible = this.pagedItems();
+    if (!visible.length) return false;
+    return visible.every(item => this.isSelected(item, item._isFolder));
   }
 
   toggleSelectAll(checked: boolean): void {
-    const visibleFiles = this.pagedFiles();
-
+    const visible = this.pagedItems();
     if (checked) {
-      visibleFiles.forEach(file => this.selectedIds.add(file.id));
-      return;
+      visible.forEach(item => item._isFolder ? this.selectedFolderIds.add(item.id) : this.selectedFileIds.add(item.id));
+    } else {
+      visible.forEach(item => item._isFolder ? this.selectedFolderIds.delete(item.id) : this.selectedFileIds.delete(item.id));
     }
-
-    visibleFiles.forEach(file => this.selectedIds.delete(file.id));
   }
 
   selectedCount(): number {
-    return this.selectedIds.size;
+    return this.selectedFileIds.size + this.selectedFolderIds.size;
   }
 
-  onSearchTermChange(): void {
-    this.pageIndex = 0;
+  clearSelection(): void {
+    this.selectedFileIds.clear();
+    this.selectedFolderIds.clear();
   }
 
-  onSortChange(): void {
-    this.pageIndex = 0;
-  }
 
+  // --- Eventy UI ---
+  onSearchTermChange(): void { this.pageIndex = 0; }
+  onSortChange(): void { this.pageIndex = 0; }
   onPageChange(event: PageEvent): void {
     this.pageIndex = event.pageIndex;
     this.pageSize = event.pageSize;
   }
 
-  openRowMenu(file: UserFile): void {
-    this.activeMenuFile = file;
-  }
-
-  onRowRightClick(event: MouseEvent, file: UserFile): void {
+  onRowRightClick(event: MouseEvent, item: any, isFolder: boolean): void {
     event.preventDefault();
     event.stopPropagation();
-    this.activeMenuFile = file;
+    
+    if (isFolder) {
+        this.activeMenuFolder = item;
+        this.activeMenuFile = null;
+    } else {
+        this.activeMenuFile = item;
+        this.activeMenuFolder = null;
+    }
+    
     this.contextMenuPosition = {
       x: `${event.clientX}px`,
       y: `${event.clientY}px`
@@ -240,88 +346,170 @@ export class FilesListComponent implements OnInit, OnDestroy {
     this.contextMenuTrigger?.closeMenu();
     setTimeout(() => this.contextMenuTrigger?.openMenu());
   }
+  
+  openFileDetails(item: UserFile): void {
+    this.dialog.open(FileDetailsDialogComponent, {
+      width: '460px',
+      data: { file: item },
+      autoFocus: false
+    });
+  }
+  
+  // --- Metody operacji ---
+  async deleteOne(item: any, isFolder: boolean): Promise<void> {
+    const label = isFolder ? item.name : this.getFileLabel(item);
+    const confirmed = await this.askDeleteConfirmation('Usuń', `Czy na pewno usunąć "${label}"?`);
+    if (!confirmed) return;
 
-  async deleteOne(file: UserFile): Promise<void> {
-    const confirmed = await this.askDeleteConfirmation(
-      'Usun plik',
-      `Czy na pewno chcesz usunac plik "${this.getFileLabel(file)}"?`
-    );
-
-    if (!confirmed) {
-      return;
+    try {
+        if (isFolder) {
+            await firstValueFrom(this.filesService.deleteFolder(item.id));
+            this.selectedFolderIds.delete(item.id);
+        } else {
+            await firstValueFrom(this.filesService.deleteFile(item.id));
+            this.selectedFileIds.delete(item.id);
+        }
+        this.notificationService.success('Pomyślnie usunięto.');
+        this.loadContents();
+    } catch(err) {
+        this.notificationService.error(this.getReadableError(err));
     }
-
-    await this.performDelete([file]);
   }
 
-  async deleteSelected(): Promise<void> {
-    const filesToDelete = this.files.filter(file => this.selectedIds.has(file.id));
-    if (!filesToDelete.length) {
-      return;
-    }
-
-    const confirmed = await this.askDeleteConfirmation(
-      'Usun zaznaczone pliki',
-      `Czy na pewno chcesz usunac ${filesToDelete.length} zaznaczonych plikow?`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    await this.performDelete(filesToDelete);
-  }
-
-  async renameOne(file: UserFile): Promise<void> {
+  async renameOne(item: any, isFolder: boolean): Promise<void> {
+    const label = isFolder ? item.name : this.getFileLabel(item);
     const dialogRef = this.dialog.open(RenameFileDialogComponent, {
       width: '420px',
-      data: { filename: this.getFileLabel(file) },
+      data: { filename: label },
       autoFocus: false
     });
 
     const result = await firstValueFrom(dialogRef.afterClosed());
-    if (!result) {
-      return;
-    }
+    if (!result) return;
 
     try {
-      await firstValueFrom(this.filesService.renameFile(file.id, result));
-      this.notificationService.success(`Zmieniono nazwę pliku na "${result}".`);
-      this.loadFiles();
+      if (isFolder) {
+         await firstValueFrom(this.filesService.renameFolder(item.id, result));
+      } else {
+         await firstValueFrom(this.filesService.renameFile(item.id, result));
+      }
+      this.notificationService.success(`Zmieniono nazwę na "${result}".`);
+      this.loadContents();
     } catch (error) {
-      this.errorMessage = this.getReadableError(error);
-      this.notificationService.error(this.errorMessage);
+      this.notificationService.error(this.getReadableError(error));
     }
   }
 
-  clearSelection(): void {
-    this.selectedIds.clear();
+  contextMenuMove(): void {
+    const activeItem = this.activeMenuFolder || this.activeMenuFile;
+    if (!activeItem) return;
+    const isFolder = !!this.activeMenuFolder;
+
+    if (this.isSelected(activeItem, isFolder) && this.selectedCount() > 1) {
+      this.moveSelected();
+    } else {
+      this.moveOne(activeItem, isFolder);
+    }
   }
 
-  trackByFileId(_: number, file: UserFile): number {
-    return file.id;
+  contextMenuDelete(): void {
+    const activeItem = this.activeMenuFolder || this.activeMenuFile;
+    if (!activeItem) return;
+    const isFolder = !!this.activeMenuFolder;
+
+    if (this.isSelected(activeItem, isFolder) && this.selectedCount() > 1) {
+      this.deleteSelected();
+    } else {
+      this.deleteOne(activeItem, isFolder);
+    }
+  }
+
+  async moveSelected(): Promise<void> {
+     // Przenosimy wybrane
+     const selectedFolders = Array.from(this.selectedFolderIds);
+     const selectedFiles = Array.from(this.selectedFileIds);
+     if (!selectedFolders.length && !selectedFiles.length) return;
+     
+     const dialogRef = this.dialog.open(MoveItemDialogComponent, {
+      width: '420px',
+      data: { itemsCount: selectedFolders.length + selectedFiles.length }
+    });
+    
+    const result = await firstValueFrom(dialogRef.afterClosed());
+    if (result && result.targetFolderId !== undefined) {
+         try {
+             await firstValueFrom(this.filesService.moveItems({
+                 target_folder_id: result.targetFolderId,
+                 folder_ids: selectedFolders,
+                 file_ids: selectedFiles
+             }));
+             this.notificationService.success('Elementy zostały przeniesione.');
+             this.loadContents();
+         } catch(err) {
+             this.notificationService.error(this.getReadableError(err));
+         }
+    }
+  }
+
+  async moveOne(item: any, isFolder: boolean): Promise<void> {
+     const dialogRef = this.dialog.open(MoveItemDialogComponent, {
+      width: '420px',
+      data: { itemsCount: 1 }
+    });
+    
+    const result = await firstValueFrom(dialogRef.afterClosed());
+    if (result && result.targetFolderId !== undefined) {
+         try {
+             await firstValueFrom(this.filesService.moveItems({
+                 target_folder_id: result.targetFolderId,
+                 folder_ids: isFolder ? [item.id] : [],
+                 file_ids: !isFolder ? [item.id] : []
+             }));
+             this.notificationService.success('Pomyślnie przeniesiono.');
+             this.loadContents();
+         } catch(err) {
+             this.notificationService.error(this.getReadableError(err));
+         }
+    }
+  }
+
+  async deleteSelected(): Promise<void> {
+    const total = this.selectedFolderIds.size + this.selectedFileIds.size;
+    if (total === 0) return;
+    
+    const confirmed = await this.askDeleteConfirmation('Usuń wybrane', `Czy na pewno usunąć wybrane elementy (${total})?`);
+    if (!confirmed) return;
+
+    this.isDeleting = true;
+    try {
+        for (const id of this.selectedFolderIds) {
+            await firstValueFrom(this.filesService.deleteFolder(id));
+        }
+        for (const id of this.selectedFileIds) {
+            await firstValueFrom(this.filesService.deleteFile(id));
+        }
+        this.notificationService.success(`Usunięto ${total} elementów.`);
+        this.loadContents();
+    } catch(err) {
+        this.notificationService.error(this.getReadableError(err));
+    } finally {
+        this.isDeleting = false;
+    }
   }
 
   private ensureValidPageIndex(): void {
-    const total = this.filteredFiles().length;
+    const total = this.visibleCount();
     const maxPageIndex = total > 0 ? Math.max(Math.ceil(total / this.pageSize) - 1, 0) : 0;
-
-    if (this.pageIndex > maxPageIndex) {
-      this.pageIndex = maxPageIndex;
-    }
+    if (this.pageIndex > maxPageIndex) this.pageIndex = maxPageIndex;
   }
 
   private compareFiles(left: UserFile, right: UserFile): number {
     switch (this.sortOption) {
-      case 'oldest':
-        return new Date(left.upload_date).getTime() - new Date(right.upload_date).getTime();
-      case 'name-asc':
-        return this.getFileLabel(left).localeCompare(this.getFileLabel(right), 'pl', { sensitivity: 'base' });
-      case 'name-desc':
-        return this.getFileLabel(right).localeCompare(this.getFileLabel(left), 'pl', { sensitivity: 'base' });
+      case 'oldest': return new Date(left.upload_date).getTime() - new Date(right.upload_date).getTime();
+      case 'name-asc': return this.getFileLabel(left).localeCompare(this.getFileLabel(right), 'pl');
+      case 'name-desc': return this.getFileLabel(right).localeCompare(this.getFileLabel(left), 'pl');
       case 'newest':
-      default:
-        return new Date(right.upload_date).getTime() - new Date(left.upload_date).getTime();
+      default: return new Date(right.upload_date).getTime() - new Date(left.upload_date).getTime();
     }
   }
 
@@ -331,48 +519,16 @@ export class FilesListComponent implements OnInit, OnDestroy {
       data: { title, message },
       autoFocus: false
     });
-
     const result = await firstValueFrom(dialogRef.afterClosed());
     return !!result;
   }
 
-  private async performDelete(filesToDelete: UserFile[]): Promise<void> {
-    try {
-      this.isDeleting = true;
-      this.errorMessage = '';
-
-      await Promise.all(
-        filesToDelete.map(file => firstValueFrom(this.filesService.deleteFile(file.id)))
-      );
-
-      filesToDelete.forEach(file => this.selectedIds.delete(file.id));
-      this.notificationService.success(
-        filesToDelete.length === 1
-          ? 'Plik został usunięty.'
-          : `Usunięto ${filesToDelete.length} pliki.`
-      );
-      this.loadFiles();
-    } catch (error) {
-      this.errorMessage = this.getReadableError(error);
-      this.notificationService.error(this.errorMessage);
-      this.isDeleting = false;
-    } finally {
-      this.isDeleting = false;
-    }
-  }
-
-  private getReadableError(error: unknown): string {
+  public getReadableError(error: unknown): string {
     if (typeof error === 'object' && error !== null && 'error' in error) {
-      const serverError = (error as { error?: { detail?: string } }).error;
-      if (serverError?.detail) {
-        return serverError.detail;
-      }
+      const serverError = (error as any).error;
+      if (serverError?.detail) return serverError.detail;
     }
-
-    if (error instanceof Error && error.message) {
-      return error.message;
-    }
-
-    return 'Nie udalo sie pobrac listy plikow.';
+    if (error instanceof Error && error.message) return error.message;
+    return 'Wystąpił nieoczekiwany błąd.';
   }
 }

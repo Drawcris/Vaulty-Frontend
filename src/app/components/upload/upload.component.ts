@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Output } from '@angular/core';
+import { Component, EventEmitter, Output, HostListener } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { MatButtonModule } from '@angular/material/button';
@@ -38,6 +38,14 @@ export class UploadComponent {
   lastDebugFileName = '';
   activeFileName = '';
   showToast = false;
+
+  currentFolderId: number | null = null;
+
+  @HostListener('window:vaulty-folder-changed', ['$event'])
+  onFolderChanged(event: Event): void {
+    const customEvent = event as CustomEvent;
+    this.currentFolderId = customEvent.detail;
+  }
 
   constructor(
     private cryptoService: CryptoService,
@@ -96,6 +104,7 @@ export class UploadComponent {
           hash,
           'AES_256',
           chosenName,
+          this.currentFolderId,
           `${file.name}.vaulty.enc`
         )
       );

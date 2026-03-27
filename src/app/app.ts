@@ -15,6 +15,7 @@ import { distinctUntilChanged, map } from 'rxjs/operators';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
 import { AuthService } from './core/services/auth.service';
+import { environment } from './config/environment';
 
 @Component({
   selector: 'app-root',
@@ -82,11 +83,18 @@ import { AuthService } from './core/services/auth.service';
 })
 export class App {
   protected readonly title = signal('Frontend');
+  protected readonly appVersion = signal(environment.APP_VERSION);
   protected readonly isBootstrapping$: Observable<boolean>;
+  protected readonly isAuthenticated$: Observable<boolean>;
 
   constructor(private authService: AuthService) {
     this.isBootstrapping$ = this.authService.getAuthState$().pipe(
       map(state => state.bootstrapping),
+      distinctUntilChanged()
+    );
+
+    this.isAuthenticated$ = this.authService.getAuthState$().pipe(
+      map(state => state.isAuthenticated),
       distinctUntilChanged()
     );
   }

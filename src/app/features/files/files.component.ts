@@ -111,7 +111,8 @@ import { WalletService } from '../../core/services/wallet.service';
     :host {
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      flex: 1;
+      min-height: 0;
       background:
         radial-gradient(circle at top left, rgba(66, 133, 244, 0.06), transparent 26%),
         linear-gradient(180deg, #f8fbff 0%, #f3f6fb 100%);

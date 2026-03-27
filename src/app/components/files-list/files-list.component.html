@@ -1,66 +1,97 @@
 <mat-card class="files-list-card">
-  <div class="list-header">
-    <div class="toolbar-main">
-      <label class="search-shell" aria-label="Szukaj plików">
-        <mat-icon class="toolbar-icon">search</mat-icon>
-        <input
-          type="text"
-          [(ngModel)]="searchTerm"
-          (ngModelChange)="onSearchTermChange()"
-          placeholder="Szukaj po nazwie, CID lub szyfrowaniu" />
-      </label>
+  <div class="list-header" style="flex-direction: column; align-items: stretch; gap: 12px;">
+    
+    <!-- Breadcrumbs & New folder -->
+    <div style="display: flex; align-items: center; gap: 4px; font-weight: 500; font-size: 15px;">
+      <button *ngIf="currentFolderId !== null" mat-icon-button (click)="goBack()" matTooltip="Powrót">
+         <mat-icon>arrow_upward</mat-icon>
+      </button>
 
-      <mat-form-field appearance="outline" class="sort-field">
-        <mat-select
-          [(ngModel)]="sortOption"
-          (selectionChange)="onSortChange()"
-          aria-label="Sortowanie plików">
-          <mat-option value="newest">Najnowsze</mat-option>
-          <mat-option value="oldest">Najstarsze</mat-option>
-          <mat-option value="name-asc">Nazwa A-Z</mat-option>
-          <mat-option value="name-desc">Nazwa Z-A</mat-option>
-        </mat-select>
-      </mat-form-field>
-
-      <div class="results-pill">
-        {{ visibleCount() }} wynik{{ visibleCount() === 1 ? '' : visibleCount() < 5 ? 'i' : 'ów' }}
-      </div>
+      <button mat-icon-button (click)="navigateToFolder(null)" matTooltip="Główny katalog dysku">
+         <mat-icon>home</mat-icon>
+      </button>
+      <span style="cursor: pointer; color: #1976d2;" (click)="navigateToFolder(null)">Mój dysk</span>
+      
+      <ng-container *ngFor="let crumb of breadcrumbs">
+         <mat-icon style="font-size: 20px; width: 20px; height: 20px; color: #777;">chevron_right</mat-icon>
+         <span style="cursor: pointer; color: #1976d2;" (click)="navigateToFolder(crumb.id)">{{ crumb.name }}</span>
+      </ng-container>
+      
+      <span style="flex: 1;"></span>
+      
+      <button mat-stroked-button color="primary" style="background: white;" (click)="createFolder()">
+         <mat-icon>create_new_folder</mat-icon> Nowy folder
+      </button>
     </div>
 
-    <div class="header-actions">
-      @if (selectedCount()) {
-        <div class="selection-bar">
-          <span class="selection-count">{{ selectedCount() }}</span>
-          <button
-            mat-icon-button
-            class="selection-icon-button"
-            (click)="clearSelection()"
-            [disabled]="isDeleting"
-            matTooltip="Wyczyść zaznaczenie"
-            aria-label="Wyczyść zaznaczenie">
-            <mat-icon class="icon-glyph">close</mat-icon>
-          </button>
-          <button
-            mat-icon-button
-            class="selection-icon-button danger"
-            (click)="deleteSelected()"
-            [disabled]="isDeleting"
-            matTooltip="Usuń zaznaczone pliki"
-            aria-label="Usuń zaznaczone">
-            <mat-icon class="icon-glyph">delete</mat-icon>
-          </button>
-        </div>
-      }
+    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+      <div class="toolbar-main" style="width: auto;">
+        <label class="search-shell" aria-label="Szukaj plików">
+          <mat-icon class="toolbar-icon">search</mat-icon>
+          <input
+            type="text"
+            [(ngModel)]="searchTerm"
+            (ngModelChange)="onSearchTermChange()"
+            placeholder="Szukaj..." />
+        </label>
 
-      <button
-        mat-icon-button
-        class="refresh-button"
-        (click)="loadFiles()"
-        [disabled]="isLoading || isDeleting"
-        matTooltip="Odśwież listę plików"
-        aria-label="Odśwież listę plików">
-        <mat-icon>refresh</mat-icon>
-      </button>
+        <mat-form-field appearance="outline" class="sort-field">
+          <mat-select
+            [(ngModel)]="sortOption"
+            (selectionChange)="onSortChange()"
+            aria-label="Sortowanie">
+            <mat-option value="newest">Najnowsze</mat-option>
+            <mat-option value="oldest">Najstarsze</mat-option>
+            <mat-option value="name-asc">Nazwa A-Z</mat-option>
+            <mat-option value="name-desc">Nazwa Z-A</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <div class="results-pill">
+          {{ visibleCount() }} wynik{{ visibleCount() === 1 ? '' : visibleCount() < 5 ? 'i' : 'ów' }}
+        </div>
+      </div>
+
+      <div class="header-actions">
+        @if (selectedCount()) {
+          <div class="selection-bar">
+            <span class="selection-count">{{ selectedCount() }}</span>
+            <button
+              mat-icon-button
+              class="selection-icon-button"
+              (click)="clearSelection()"
+              [disabled]="isDeleting"
+              matTooltip="Wyczyść zaznaczenie">
+              <mat-icon class="icon-glyph">close</mat-icon>
+            </button>
+            <button
+              mat-icon-button
+              class="selection-icon-button"
+              (click)="moveSelected()"
+              [disabled]="isDeleting"
+              matTooltip="Przenieś zaznaczone">
+              <mat-icon class="icon-glyph">drive_file_move</mat-icon>
+            </button>
+            <button
+              mat-icon-button
+              class="selection-icon-button danger"
+              (click)="deleteSelected()"
+              [disabled]="isDeleting"
+              matTooltip="Usuń zaznaczone pliki">
+              <mat-icon class="icon-glyph">delete</mat-icon>
+            </button>
+          </div>
+        }
+
+        <button
+          mat-icon-button
+          class="refresh-button"
+          (click)="loadContents()"
+          [disabled]="isLoading || isDeleting"
+          matTooltip="Odśwież">
+          <mat-icon>refresh</mat-icon>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -74,15 +105,16 @@
       <mat-icon>error_outline</mat-icon>
       <span>{{ errorMessage }}</span>
     </div>
-  } @else if (!files.length) {
+  } @else if (!folders.length && !files.length) {
     <div class="list-state empty">
       <mat-icon class="empty-icon">folder_open</mat-icon>
-      <span>Nie masz jeszcze żadnych plików.</span>
+      <span *ngIf="currentFolderId === null">Mój dysk jest pusty.</span>
+      <span *ngIf="currentFolderId !== null">Ten folder jest pusty. Przeciągnij tutaj pliki lub utwórz nowy folder.</span>
     </div>
-  } @else if (!filteredFiles().length) {
+  } @else if (!filteredFolders().length && !filteredFiles().length) {
     <div class="list-state empty">
       <mat-icon class="empty-icon">search_off</mat-icon>
-      <span>Brak plików pasujących do wyszukiwania.</span>
+      <span>Brak wyników pasujących do wyszukiwania.</span>
     </div>
   } @else {
     <div class="files-grid">
@@ -95,54 +127,62 @@
           </mat-checkbox>
         </div>
         <div class="name-column">Nazwa</div>
-        <div class="cid-column">CID</div>
-        <div class="encryption-column">Szyfrowanie</div>
-        <div class="date-column">Dodano</div>
+        <div class="encryption-column" style="width: 100px;">Własności</div>
+        <div class="date-column">Data</div>
         <div class="owner-column">Właściciel</div>
         <div class="actions-column"></div>
       </div>
 
-      @for (file of pagedFiles(); track trackByFileId($index, file)) {
+      @for (item of pagedItems(); track (item._isFolder ? 'fo_' + item.id : 'fi_' + item.id)) {
         <div
           class="file-row"
-          [class.selected-row]="isSelected(file.id)"
-          (contextmenu)="onRowRightClick($event, file)">
+          [class.selected-row]="isSelected(item, item._isFolder)"
+          (contextmenu)="!item._isUpDir ? onRowRightClick($event, item, item._isFolder) : $event.preventDefault()"
+          (dblclick)="item._isFolder ? navigateToFolder(item.id) : (!item._isUpDir ? openFileDetails(item) : null)"
+          [attr.draggable]="!item._isUpDir ? 'true' : 'false'"
+          (dragstart)="!item._isUpDir ? onDragStart($event, item, item._isFolder ? 'folder' : 'file') : null"
+          (dragover)="item._isFolder ? onDragOver($event) : null"
+          (drop)="item._isFolder ? onDrop($event, item) : null"
+          [matTooltip]="item._isUpDir ? 'Przejdź wstecz / Upuść by przenieść' : (item._isFolder ? 'Kliknij dwukrotnie by otworzyć, lub przeciągnij do niego plik' : '')"
+        >
           <div class="select-column">
-            <mat-checkbox
-              [checked]="isSelected(file.id)"
+            <mat-checkbox *ngIf="!item._isUpDir"
+              [checked]="isSelected(item, item._isFolder)"
               (click)="$event.stopPropagation()"
-              (change)="toggleSelection(file.id, $event.checked)">
+              (change)="toggleSelection(item, item._isFolder, $event.checked)">
             </mat-checkbox>
           </div>
 
-          <div class="name-column file-main">
-            <mat-icon class="file-icon">description</mat-icon>
+          <div class="name-column file-main" style="cursor: pointer;">
+            <mat-icon class="file-icon" [style.color]="item._isFolder ? '#fbc02d' : null">
+                {{ item._isFolder ? 'folder' : 'description' }}
+            </mat-icon>
             <div class="file-copy">
-              <div class="file-title">{{ getFileLabel(file) }}</div>
-              <div class="file-subtitle">ID rekordu: {{ file.id }}</div>
+              <div class="file-title">{{ item._isFolder ? item.name : getFileLabel(item) }}</div>
+              <div class="file-subtitle" *ngIf="!item._isFolder">ID: {{ item.id }}</div>
             </div>
           </div>
 
-          <div class="cid-column">
-            <div class="cid-main">{{ shortCid(file.cid) }}</div>
-            <div class="cid-full">{{ file.cid }}</div>
+          <div class="encryption-column" *ngIf="!item._isUpDir">
+            <span class="encryption-pill" *ngIf="item.encryption_type">{{ item.encryption_type }}</span>
+            <span *ngIf="!item.encryption_type" style="font-size: 13px; color: #777;">Katalog</span>
           </div>
 
-          <div class="encryption-column">
-            <span class="encryption-pill">{{ file.encryption_type }}</span>
+          <div class="date-column date-text">
+             <span *ngIf="!item._isUpDir">{{ formatDate(item._isFolder ? item.created_at : item.upload_date) }}</span>
           </div>
 
-          <div class="date-column date-text">{{ formatDate(file.upload_date) }}</div>
-
-          <div class="owner-column owner-text">{{ getOwnerLabel() }}</div>
+          <div class="owner-column owner-text">
+             <span *ngIf="!item._isUpDir">{{ getOwnerLabel() }}</span>
+          </div>
 
           <div class="actions-column">
-            <div class="hover-actions">
+            <div class="hover-actions" *ngIf="!item._isUpDir">
               <button
                 mat-icon-button
                 class="row-action"
                 disabled
-                matTooltip="Udostępnij plik"
+                matTooltip="Udostępnij (wkrótce)"
                 aria-label="Udostępnij">
                 <mat-icon class="icon-glyph">person_add</mat-icon>
               </button>
@@ -150,35 +190,33 @@
                 mat-icon-button
                 class="row-action"
                 disabled
-                matTooltip="Pobierz plik"
+                matTooltip="Pobierz (wkrótce)"
                 aria-label="Pobierz">
                 <mat-icon class="icon-glyph">download</mat-icon>
               </button>
               <button
                 mat-icon-button
                 class="row-action"
-                (click)="renameOne(file)"
-                matTooltip="Zmień nazwę pliku"
-                aria-label="Zmień nazwę">
+                (click)="renameOne(item, item._isFolder)"
+                matTooltip="Zmień nazwę">
                 <mat-icon class="icon-glyph">edit</mat-icon>
               </button>
               <button
                 mat-icon-button
                 class="row-action danger"
-                (click)="deleteOne(file)"
+                (click)="deleteOne(item, item._isFolder)"
                 [disabled]="isDeleting"
-                matTooltip="Usuń plik"
-                aria-label="Usuń">
+                matTooltip="Usuń">
                 <mat-icon class="icon-glyph">delete</mat-icon>
               </button>
             </div>
 
-            <button
+            <button *ngIf="!item._isUpDir"
               mat-icon-button
-              [matMenuTriggerFor]="rowMenu"
-              (click)="openRowMenu(file)"
-              matTooltip="Więcej opcji"
-              aria-label="Więcej opcji">
+              [matMenuTriggerFor]="contextMenu"
+              [matMenuTriggerData]="{ item: item, isFolder: item._isFolder }"
+              (click)="onRowRightClick($event, item, item._isFolder)"
+              matTooltip="Więcej opcji">
               <mat-icon>more_vert</mat-icon>
             </button>
           </div>
@@ -197,25 +235,6 @@
     </mat-paginator>
   }
 
-  <mat-menu #rowMenu="matMenu">
-    <button mat-menu-item disabled>
-      <mat-icon class="menu-item-icon">person_add</mat-icon>
-      <span>Udostępnij</span>
-    </button>
-    <button mat-menu-item disabled>
-      <mat-icon class="menu-item-icon">download</mat-icon>
-      <span>Pobierz</span>
-    </button>
-    <button mat-menu-item (click)="renameOne(activeMenuFile!)" [disabled]="!activeMenuFile">
-      <mat-icon class="menu-item-icon">edit</mat-icon>
-      <span>Zmień nazwę</span>
-    </button>
-    <button mat-menu-item (click)="deleteOne(activeMenuFile!)" [disabled]="!activeMenuFile || isDeleting">
-      <mat-icon class="menu-item-icon danger-icon">delete</mat-icon>
-      <span>Usuń</span>
-    </button>
-  </mat-menu>
-
   <div
     #contextMenuTrigger="matMenuTrigger"
     class="context-anchor"
@@ -224,21 +243,38 @@
     [matMenuTriggerFor]="contextMenu">
   </div>
 
-  <mat-menu #contextMenu="matMenu">
-    <button mat-menu-item disabled>
-      <mat-icon class="menu-item-icon">person_add</mat-icon>
-      <span>Udostępnij</span>
+  <mat-menu #contextMenu="matMenu" panelClass="gd-menu">
+    <button mat-menu-item *ngIf="activeMenuFile" (click)="openFileDetails(activeMenuFile)">
+      <mat-icon>info</mat-icon>
+      <span>Szczegóły pliku</span>
     </button>
-    <button mat-menu-item disabled>
-      <mat-icon class="menu-item-icon">download</mat-icon>
-      <span>Pobierz</span>
-    </button>
-    <button mat-menu-item (click)="renameOne(activeMenuFile!)" [disabled]="!activeMenuFile">
-      <mat-icon class="menu-item-icon">edit</mat-icon>
+
+    <div *ngIf="activeMenuFile" class="menu-divider"></div>
+
+    <button mat-menu-item (click)="renameOne(activeMenuFolder || activeMenuFile, !!activeMenuFolder)">
+      <mat-icon>edit</mat-icon>
       <span>Zmień nazwę</span>
     </button>
-    <button mat-menu-item (click)="deleteOne(activeMenuFile!)" [disabled]="!activeMenuFile || isDeleting">
-      <mat-icon class="menu-item-icon danger-icon">delete</mat-icon>
+    <button mat-menu-item (click)="contextMenuMove()">
+      <mat-icon>drive_file_move</mat-icon>
+      <span>Przenieś do...</span>
+    </button>
+
+    <div class="menu-divider"></div>
+
+    <button mat-menu-item disabled *ngIf="activeMenuFile">
+      <mat-icon>download</mat-icon>
+      <span>Pobierz</span>
+    </button>
+    <button mat-menu-item disabled>
+      <mat-icon>person_add</mat-icon>
+      <span>Udostępnij</span>
+    </button>
+
+    <div class="menu-divider"></div>
+
+    <button mat-menu-item (click)="contextMenuDelete()" [disabled]="isDeleting">
+      <mat-icon>delete</mat-icon>
       <span>Usuń</span>
     </button>
   </mat-menu>

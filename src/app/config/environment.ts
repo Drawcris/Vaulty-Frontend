@@ -13,7 +13,7 @@ export const environment = {
 
   // Application metadata
   APP_NAME: 'Vaulty',
-  APP_VERSION: '1.0.0',
+  APP_VERSION: '1.1.0',
 
   // Blockchain & Web3
   SUPPORTED_CHAIN_ID: 1, // Ethereum mainnet (change to 11155111 for Sepolia testnet)

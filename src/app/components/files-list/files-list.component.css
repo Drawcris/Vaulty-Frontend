@@ -7,11 +7,17 @@
   border: 1px solid rgba(214, 225, 240, 0.9);
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.05);
   background: rgba(255, 255, 255, 0.96);
-  padding: 8px 0;
-  overflow: hidden;
+  padding: 8px 0 0 0;
 }
 
 .list-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -202,7 +208,7 @@
 .files-grid-header,
 .file-row {
   display: grid;
-  grid-template-columns: 56px minmax(260px, 1.65fr) minmax(300px, 1.65fr) minmax(140px, 0.8fr) minmax(170px, 0.9fr) minmax(110px, 0.7fr) 220px;
+  grid-template-columns: 56px minmax(320px, 2.5fr) minmax(140px, 0.8fr) minmax(170px, 0.9fr) minmax(110px, 0.7fr) 220px;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
@@ -251,7 +257,6 @@
 }
 
 .name-column,
-.cid-column,
 .encryption-column,
 .date-column,
 .owner-column,
@@ -298,24 +303,7 @@
   text-overflow: ellipsis;
 }
 
-.cid-main {
-  font-size: 13px;
-  color: #1f2937;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
-.cid-full {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #6b7280;
-  font-family: 'Courier New', monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .encryption-pill {
   display: inline-flex;
@@ -406,10 +394,36 @@
   color: #d93025;
 }
 
+::ng-deep .gd-menu {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1) !important;
+  min-width: 240px !important;
+  padding: 8px 0 !important;
+}
+::ng-deep .gd-menu .mat-mdc-menu-item {
+  color: #3c4043 !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  min-height: 40px !important;
+  padding: 0 24px !important;
+}
+::ng-deep .gd-menu .mat-mdc-menu-item:hover {
+  background-color: #f1f3f4 !important;
+}
+::ng-deep .gd-menu .mat-icon {
+  color: #5f6368 !important;
+  font-size: 20px !important;
+  margin-right: 16px !important;
+}
+::ng-deep .gd-menu .menu-divider {
+  border-top: 1px solid #e8eaed;
+  margin: 6px 0;
+}
+
 @media (max-width: 1200px) {
   .files-grid-header,
   .file-row {
-    grid-template-columns: 56px minmax(220px, 1.5fr) minmax(220px, 1.4fr) 120px 150px 100px 180px;
+    grid-template-columns: 56px minmax(280px, 2fr) 120px 150px 100px 180px;
   }
 }
 
@@ -437,7 +451,6 @@
     padding: 8px 12px;
   }
 
-  .cid-column,
   .encryption-column,
   .date-column,
   .owner-column {
