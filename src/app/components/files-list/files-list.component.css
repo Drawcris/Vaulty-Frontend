@@ -489,3 +489,23 @@
     padding-left: 10px;
   }
 }
+
+.download-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e8f0fe, #f0f4ff);
+  border: 1px solid rgba(26, 115, 232, 0.2);
+  color: #1a4db5;
+  font-size: 13px;
+  font-weight: 500;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

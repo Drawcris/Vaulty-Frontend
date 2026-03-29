@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
+import { AuthService } from '../../core/services/auth.service';
 import { CryptoService } from '../../core/services/crypto.service';
 import { FilesService, UploadFileResponse } from '../../core/services/files.service';
 import { sha256 } from '../../utils/hash.util';
@@ -48,6 +49,7 @@ export class UploadComponent {
   }
 
   constructor(
+    private authService: AuthService,
     private cryptoService: CryptoService,
     private filesService: FilesService,
     private dialog: MatDialog
@@ -77,13 +79,24 @@ export class UploadComponent {
       this.lastDebugFileName = '';
       this.activeFileName = chosenName;
 
+      const dotIndex = file.name.lastIndexOf('.');
+      const originalExt = dotIndex > 0 ? file.name.substring(dotIndex) : '';
+      const finalFilename = chosenName.toLowerCase().endsWith(originalExt.toLowerCase()) 
+        ? chosenName 
+        : `${chosenName}${originalExt}`;
+
       const fileBuffer = await file.arrayBuffer();
+      const wallet = this.authService.getWallet();
+
+      if (!wallet) {
+        throw new Error('Brak zdefiniowanego portfela');
+      }
 
       this.progressValue = 30;
       this.progressLabel = 'Szyfrowanie AES-256';
-      const encrypted = await this.cryptoService.encryptFile(fileBuffer);
+      const encryptedBytes = await this.cryptoService.encryptFile(fileBuffer, wallet);
 
-      const encryptedBlob = new Blob([encrypted.encryptedData], {
+      const encryptedBlob = new Blob([encryptedBytes as any], {
         type: 'application/octet-stream'
       });
       const encryptedBuffer = await encryptedBlob.arrayBuffer();
@@ -103,7 +116,7 @@ export class UploadComponent {
           encryptedBlob,
           hash,
           'AES_256',
-          chosenName,
+          finalFilename,
           this.currentFolderId,
           `${file.name}.vaulty.enc`
         )
@@ -111,8 +124,7 @@ export class UploadComponent {
 
       this.progressValue = 100;
       this.progressLabel = 'Gotowe';
-      this.storeLocalCrypto(response, encrypted);
-      this.uploadMessage = `Plik "${response.filename ?? chosenName}" zostal zapisany.`;
+      this.uploadMessage = `Plik "${response.filename ?? finalFilename}" zostal zapisany.`;
       this.uploaded.emit();
       input.value = '';
 
@@ -164,13 +176,7 @@ export class UploadComponent {
     return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
   }
 
-  private storeLocalCrypto(
-    response: UploadFileResponse,
-    encrypted: { key: string; iv: string }
-  ): void {
-    localStorage.setItem(`file_key_${response.file_id}`, encrypted.key);
-    localStorage.setItem(`file_iv_${response.file_id}`, encrypted.iv);
-  }
+
 
   private saveEncryptedDebugCopy(originalFileName: string, encryptedBlob: Blob): void {
     const debugFileName = `${originalFileName}.vaulty.enc`;

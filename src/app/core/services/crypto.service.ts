@@ -1,25 +1,27 @@
 import { Injectable } from '@angular/core';
 
-export interface EncryptedFilePayload {
-  encryptedData: ArrayBuffer;
-  key: string;
-  iv: string;
-}
-
 @Injectable({
   providedIn: 'root'
 })
 export class CryptoService {
-  async generateKey(): Promise<CryptoKey> {
-    return crypto.subtle.generateKey(
-      { name: 'AES-GCM', length: 256 },
-      true,
+
+  async generateKeyFromWallet(wallet: string): Promise<CryptoKey> {
+    const enc = new TextEncoder().encode(wallet);
+
+    const hash = await crypto.subtle.digest('SHA-256', enc);
+
+    return crypto.subtle.importKey(
+      'raw',
+      hash,
+      { name: 'AES-GCM' },
+      false,
       ['encrypt', 'decrypt']
     );
   }
 
-  async encryptFile(file: ArrayBuffer): Promise<EncryptedFilePayload> {
-    const key = await this.generateKey();
+  async encryptFile(file: ArrayBuffer, wallet: string): Promise<Uint8Array> {
+    const key = await this.generateKeyFromWallet(wallet);
+    // Generowanie losowego wektora inicjującego 12-bajtowego dla AES-GCM
     const iv = crypto.getRandomValues(new Uint8Array(12));
 
     const encrypted = await crypto.subtle.encrypt(
@@ -28,58 +30,32 @@ export class CryptoService {
       file
     );
 
-    const exportedKey = await crypto.subtle.exportKey('raw', key);
+    // Tworzenie tablicy z IV na początku
+    const encryptedBytes = new Uint8Array(encrypted);
+    const payload = new Uint8Array(iv.length + encryptedBytes.length);
+    
+    payload.set(iv, 0);
+    payload.set(encryptedBytes, iv.length);
 
-    return {
-      encryptedData: encrypted,
-      key: this.arrayBufferToBase64(exportedKey),
-      iv: this.arrayBufferToBase64(iv.buffer)
-    };
+    return payload;
   }
 
   async decryptFile(
     encryptedData: ArrayBuffer,
-    keyBase64: string,
-    ivBase64: string
-  ): Promise<ArrayBuffer> {
-    const keyBuffer = this.base64ToArrayBuffer(keyBase64);
+    wallet: string
+  ): Promise<Uint8Array> {
 
-    const key = await crypto.subtle.importKey(
-      'raw',
-      keyBuffer,
-      'AES-GCM',
-      false,
-      ['decrypt']
-    );
+    const key = await this.generateKeyFromWallet(wallet);
 
-    const iv = new Uint8Array(this.base64ToArrayBuffer(ivBase64));
+    const iv = encryptedData.slice(0, 12);
+    const data = encryptedData.slice(12);
 
-    return crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv },
       key,
-      encryptedData
+      data
     );
-  }
 
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-
-    bytes.forEach(byte => {
-      binary += String.fromCharCode(byte);
-    });
-
-    return btoa(binary);
-  }
-
-  private base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-
-    return bytes.buffer;
+    return new Uint8Array(decrypted);
   }
 }

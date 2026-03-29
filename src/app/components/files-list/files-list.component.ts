@@ -24,6 +24,9 @@ import { MoveItemDialogComponent } from './move-item-dialog.component';
 import { FileDetailsDialogComponent } from './file-details-dialog.component';
 
 import { AuthService } from '../../core/services/auth.service';
+import { ApiService } from '../../core/services/api.service';
+import { CryptoService } from '../../core/services/crypto.service';
+import { DownloadService, DownloadProgress } from '../../core/services/download.service';
 import { FilesService, UserFile, UserFolder, FolderBreadcrumb } from '../../core/services/files.service';
 import { NotificationService } from '../../core/services/notification.service';
 
@@ -59,6 +62,8 @@ export class FilesListComponent implements OnInit, OnDestroy {
 
   isLoading = false;
   isDeleting = false;
+  isDownloading = false;
+  downloadProgress: DownloadProgress | null = null;
   errorMessage = '';
 
   selectedFileIds = new Set<number>();
@@ -78,6 +83,9 @@ export class FilesListComponent implements OnInit, OnDestroy {
 
   constructor(
     private authService: AuthService,
+    private apiService: ApiService,
+    private cryptoService: CryptoService,
+    private downloadService: DownloadService,
     private filesService: FilesService,
     private notificationService: NotificationService,
     private dialog: MatDialog,
@@ -354,6 +362,111 @@ export class FilesListComponent implements OnInit, OnDestroy {
       autoFocus: false
     });
   }
+
+  async downloadFile(item: UserFile): Promise<void> {
+    const wallet = this.authService.getWallet();
+    if (!wallet) {
+      this.notificationService.error('Brak zdefiniowanego portfela');
+      return;
+    }
+
+    try {
+      this.isDownloading = true;
+      this.downloadProgress = { current: 0, total: 1, filename: item.filename ?? `Plik #${item.id}` };
+      const blob = await this.apiService.downloadFileRaw(item.id);
+      const encryptedData = await blob.arrayBuffer();
+      const decrypted = await this.cryptoService.decryptFile(encryptedData, wallet);
+      this.saveFile(decrypted, this.getFileLabel(item));
+      this.notificationService.success(`Zapisano plik na dysku.`);
+    } catch (err) {
+      this.notificationService.error(`Błąd przy pobieraniu: ${this.getReadableError(err)}`);
+    } finally {
+      this.isDownloading = false;
+      this.downloadProgress = null;
+    }
+  }
+
+  async downloadSelected(): Promise<void> {
+    const wallet = this.authService.getWallet();
+    if (!wallet) {
+      this.notificationService.error('Brak zdefiniowanego portfela');
+      return;
+    }
+
+    const selectedFiles = this.files.filter(f => this.selectedFileIds.has(f.id));
+    if (!selectedFiles.length) {
+      this.notificationService.error('Zaznacz co najmniej jeden plik do pobrania.');
+      return;
+    }
+
+    if (selectedFiles.length === 1) {
+      await this.downloadFile(selectedFiles[0]);
+      return;
+    }
+
+    try {
+      this.isDownloading = true;
+      await this.downloadService.downloadFilesAsZip(
+        selectedFiles,
+        wallet,
+        'vaulty-pobrane',
+        (p) => {
+          this.downloadProgress = p;
+          this.cdr.detectChanges();
+        }
+      );
+      this.notificationService.success(`Pobrano ${selectedFiles.length} plików jako ZIP.`);
+    } catch (err) {
+      this.notificationService.error(`Błąd przy pobieraniu: ${this.getReadableError(err)}`);
+    } finally {
+      this.isDownloading = false;
+      this.downloadProgress = null;
+      this.cdr.detectChanges();
+    }
+  }
+
+  async downloadFolder(folder: UserFolder): Promise<void> {
+    const wallet = this.authService.getWallet();
+    if (!wallet) {
+      this.notificationService.error('Brak zdefiniowanego portfela');
+      return;
+    }
+
+    try {
+      this.isDownloading = true;
+      this.downloadProgress = { current: 0, total: 0, filename: 'Zbieranie plików...' };
+      this.cdr.detectChanges();
+
+      await this.downloadService.downloadFolderAsZip(
+        folder,
+        wallet,
+        (p) => {
+          this.downloadProgress = p;
+          this.cdr.detectChanges();
+        }
+      );
+      this.notificationService.success(`Folder "${folder.name}" pobrany jako ZIP.`);
+    } catch (err) {
+      this.notificationService.error(`Błąd pobierania folderu: ${this.getReadableError(err)}`);
+    } finally {
+      this.isDownloading = false;
+      this.downloadProgress = null;
+      this.cdr.detectChanges();
+    }
+  }
+
+  private saveFile(data: Uint8Array, fileName: string): void {
+    const blob = new Blob([data as any], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+
+    a.click();
+
+    window.URL.revokeObjectURL(url);
+  }
   
   // --- Metody operacji ---
   async deleteOne(item: any, isFolder: boolean): Promise<void> {
@@ -391,7 +504,13 @@ export class FilesListComponent implements OnInit, OnDestroy {
       if (isFolder) {
          await firstValueFrom(this.filesService.renameFolder(item.id, result));
       } else {
-         await firstValueFrom(this.filesService.renameFile(item.id, result));
+         let finalFilename = result;
+         const dotIndex = label.lastIndexOf('.');
+         const originalExt = dotIndex > 0 ? label.substring(dotIndex) : '';
+         if (originalExt && !result.toLowerCase().endsWith(originalExt.toLowerCase()) && result.lastIndexOf('.') <= 0) {
+             finalFilename = `${result}${originalExt}`;
+         }
+         await firstValueFrom(this.filesService.renameFile(item.id, finalFilename));
       }
       this.notificationService.success(`Zmieniono nazwę na "${result}".`);
       this.loadContents();
