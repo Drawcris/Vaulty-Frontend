@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectorRef, Component, HostListener, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, Input, OnChanges, OnDestroy, OnInit, SimpleChanges, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom, Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
@@ -22,12 +22,14 @@ import { RenameFileDialogComponent } from './rename-file-dialog.component';
 import { CreateFolderDialogComponent } from './create-folder-dialog.component';
 import { MoveItemDialogComponent } from './move-item-dialog.component';
 import { FileDetailsDialogComponent } from './file-details-dialog.component';
+import { ShareDialogComponent } from './share-dialog.component';
 
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { CryptoService } from '../../core/services/crypto.service';
 import { DownloadService, DownloadProgress } from '../../core/services/download.service';
 import { FilesService, UserFile, UserFolder, FolderBreadcrumb } from '../../core/services/files.service';
+import { ContractService } from '../../core/services/contract.service';
 import { NotificationService } from '../../core/services/notification.service';
 
 @Component({
@@ -58,7 +60,8 @@ export class FilesListComponent implements OnInit, OnDestroy {
   folders: UserFolder[] = [];
   files: UserFile[] = [];
   breadcrumbs: FolderBreadcrumb[] = [];
-  currentFolderId: number | null = null;
+  @Input() view: 'my' | 'shared' | 'my-shares' = 'my';
+  @Input() currentFolderId: number | null = null;
 
   isLoading = false;
   isDeleting = false;
@@ -87,6 +90,7 @@ export class FilesListComponent implements OnInit, OnDestroy {
     private cryptoService: CryptoService,
     private downloadService: DownloadService,
     private filesService: FilesService,
+    private contractService: ContractService,
     private notificationService: NotificationService,
     private dialog: MatDialog,
     private cdr: ChangeDetectorRef
@@ -94,6 +98,22 @@ export class FilesListComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadContents();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['view']) {
+      // Przy zmianie widoku (np. z Moje pliki na Udostępnione) ZAWSZE resetujemy folder do root
+      this.currentFolderId = null;
+      this.breadcrumbs = [];
+      this.clearSelection();
+    }
+
+    if (changes['view'] || changes['currentFolderId']) {
+      // setTimeout zapobiega błędowi ExpressionChangedAfterItHasBeenCheckedError
+      setTimeout(() => {
+        this.loadContents();
+      });
+    }
   }
 
   @HostListener('window:vaulty-files-refresh')
@@ -117,6 +137,55 @@ export class FilesListComponent implements OnInit, OnDestroy {
   loadContents(): void {
     this.isLoading = true;
     this.errorMessage = '';
+
+    if (this.view === 'shared') {
+      this.filesService.getSharedFiles().pipe(takeUntil(this.destroy$)).subscribe({
+        next: resources => {
+          this.files = resources.filter(r => !r._isFolder);
+          this.folders = resources.filter(r => r._isFolder).map(r => ({
+            id: r.id,
+            name: r.filename,
+            owner: r.owner,
+            created_at: r.upload_date,
+            _isShared: true 
+          } as any));
+          this.breadcrumbs = [];
+          this.finalizeLoad();
+        },
+        error: err => {
+          this.errorMessage = this.getReadableError(err);
+          this.isLoading = false;
+        }
+      });
+      return;
+    }
+
+    if (this.view === 'my-shares') {
+      this.filesService.getMyShares().pipe(takeUntil(this.destroy$)).subscribe({
+        next: shares => {
+          // Convert ShareListItem to UserFile for display with extra metadata
+          this.files = shares.map(s => ({
+            id: s.is_folder ? s.folder_id : s.file_id,
+            filename: s.filename,
+            cid: '', 
+            encryption_type: 'None',
+            upload_date: s.granted_at,
+            expiration: s.expiration,
+            recipient_wallet: s.recipient_wallet,
+            recipient_username: s.recipient_username,
+            _isFolder: s.is_folder
+          } as any));
+          this.folders = [];
+          this.breadcrumbs = [];
+          this.finalizeLoad();
+        },
+        error: err => {
+          this.errorMessage = this.getReadableError(err);
+          this.isLoading = false;
+        }
+      });
+      return;
+    }
 
     this.filesService
       .getFolderContents(this.currentFolderId)
@@ -285,8 +354,16 @@ export class FilesListComponent implements OnInit, OnDestroy {
     return file.filename?.trim() || `Plik #${file.id}`;
   }
 
-  getOwnerLabel(): string {
+  getOwnerLabel(file?: UserFile): string {
+    if (this.view === 'shared') {
+      return (file as any)?.owner_wallet ? this.formatAddress((file as any).owner_wallet) : 'Nieznany';
+    }
     return 'Ty';
+  }
+
+  private formatAddress(address: string | null): string {
+    if (!address) return '';
+    return `${address.substring(0, 4)}...${address.substring(address.length - 4)}`;
   }
 
 
@@ -358,7 +435,7 @@ export class FilesListComponent implements OnInit, OnDestroy {
   openFileDetails(item: UserFile): void {
     this.dialog.open(FileDetailsDialogComponent, {
       width: '460px',
-      data: { file: item },
+      data: { file: item, view: this.view },
       autoFocus: false
     });
   }
@@ -372,17 +449,31 @@ export class FilesListComponent implements OnInit, OnDestroy {
 
     try {
       this.isDownloading = true;
-      this.downloadProgress = { current: 0, total: 1, filename: item.filename ?? `Plik #${item.id}` };
+      this.downloadProgress = { current: 10, total: 100, filename: item.filename ?? `Plik #${item.id}` };
+      this.cdr.detectChanges();
+
       const blob = await this.apiService.downloadFileRaw(item.id);
       const encryptedData = await blob.arrayBuffer();
-      const decrypted = await this.cryptoService.decryptFile(encryptedData, wallet);
-      this.saveFile(decrypted, this.getFileLabel(item));
-      this.notificationService.success(`Zapisano plik na dysku.`);
-    } catch (err) {
+
+      this.downloadProgress = { current: 50, total: 100, filename: 'Próba deszyfrowania...' };
+      this.cdr.detectChanges();
+
+      try {
+        const decrypted = await this.cryptoService.decryptFile(encryptedData, wallet);
+        this.saveFile(decrypted, this.getFileLabel(item));
+        this.notificationService.success(`Pobrano i odszyfrowano plik.`);
+      } catch (decryptErr: any) {
+        console.warn('[Download] Decryption failed, saving encrypted:', decryptErr);
+        this.saveFile(new Uint8Array(encryptedData), this.getFileLabel(item) + '.vaulty.enc');
+        this.notificationService.warning('Pobrano zaszyfrowany plik (wymaga Etapu 3 do otwarcia).');
+      }
+    } catch (err: any) {
+      console.error('[Download] Error:', err);
       this.notificationService.error(`Błąd przy pobieraniu: ${this.getReadableError(err)}`);
     } finally {
       this.isDownloading = false;
       this.downloadProgress = null;
+      this.cdr.detectChanges();
     }
   }
 
@@ -467,7 +558,147 @@ export class FilesListComponent implements OnInit, OnDestroy {
 
     window.URL.revokeObjectURL(url);
   }
+
+  async shareFile(file: UserFile): Promise<void> {
+    const dialogRef = this.dialog.open(ShareDialogComponent, {
+      width: '420px',
+      data: { file },
+      autoFocus: false
+    });
+
+    const result = await firstValueFrom(dialogRef.afterClosed());
+    if (result && result.walletAddress) {
+      try {
+        this.isLoading = true;
+        let targetWallet = result.walletAddress;
+
+        // Jeśli to nie jest adres (prawdopodobnie username), spróbuj rozwiązać
+        if (!targetWallet.startsWith('0x') || targetWallet.length !== 42) {
+          try {
+            const resolved = await this.authService.lookupUser(targetWallet);
+            targetWallet = resolved.wallet;
+            this.notificationService.success(`Znaleziono użytkownika: ${targetWallet.substring(0, 8)}...`);
+          } catch (err: any) {
+            this.notificationService.error(`Nie znaleziono użytkownika o nazwie "${targetWallet}"`);
+            this.isLoading = false;
+            return;
+          }
+        }
+
+        const onChainSuccess = await this.contractService.grantAccess(
+          file.id, 
+          targetWallet, 
+          result.expiryDays,
+          file._isFolder
+        );
+
+        if (onChainSuccess) {
+          const expiryTs = Math.floor(Date.now() / 1000) + (result.expiryDays * 24 * 60 * 60);
+          this.filesService.grantAccess(
+            file.id, 
+            targetWallet, 
+            new Date(expiryTs * 1000).toISOString(),
+            file._isFolder
+          ).subscribe({
+            next: () => {
+              this.notificationService.success(`Pomyślnie udostępniono ${file._isFolder ? 'folder' : 'plik'}.`);
+              this.loadContents();
+            },
+            error: (err: any) => console.error('[Sync] Failed to update SQL cache:', err)
+          });
+        }
+      } catch (err: any) {
+        this.notificationService.error(this.getReadableError(err));
+      } finally {
+        this.isLoading = false;
+        this.cdr.detectChanges();
+      }
+    }
+  }
   
+  async editShare(file: UserFile): Promise<void> {
+    const dialogRef = this.dialog.open(ShareDialogComponent, {
+      width: '420px',
+      data: { 
+        file, 
+        initialWallet: file.recipient_wallet,
+        initialExpiry: 7 // Domyślnie 7, lub można obliczyć na podstawie file.expiration
+      },
+      autoFocus: false
+    });
+
+    const result = await firstValueFrom(dialogRef.afterClosed());
+    if (result && result.walletAddress) {
+      try {
+        this.isLoading = true;
+        const onChainSuccess = await this.contractService.grantAccess(
+          file.id, 
+          result.walletAddress, 
+          result.expiryDays,
+          file.folder_id !== undefined && file.cid === '' // W widoku my-shares folder_id to pole z ShareListItem
+        );
+
+        // Poprawka: w my-shares file.is_folder mówi nam czy to folder
+        const isActuallyFolder = (file as any).is_folder || file._isFolder;
+
+        const onChainSuccessFinal = await this.contractService.grantAccess(
+          file.id, 
+          result.walletAddress, 
+          result.expiryDays,
+          isActuallyFolder
+        );
+
+        if (onChainSuccessFinal) {
+          const expiryTs = Math.floor(Date.now() / 1000) + (result.expiryDays * 24 * 60 * 60);
+          this.filesService.grantAccess(
+            file.id, 
+            result.walletAddress, 
+            new Date(expiryTs * 1000).toISOString(),
+            isActuallyFolder
+          ).subscribe({
+            next: () => {
+              this.notificationService.success('Pomyślnie zaktualizowano czas wygaśnięcia.');
+              this.loadContents();
+            },
+            error: (err: any) => console.error('[Sync] Failed to update SQL cache:', err)
+          });
+        }
+      } catch (err: any) {
+        this.notificationService.error(this.getReadableError(err));
+      } finally {
+        this.isLoading = false;
+        this.cdr.detectChanges();
+      }
+    }
+  }
+
+  async revokeShare(file: UserFile): Promise<void> {
+    const confirmed = await this.askDeleteConfirmation('Odbierz dostęp', `Czy na pewno odebrać dostęp dla portfela ${file.recipient_wallet}?`);
+    if (!confirmed) return;
+
+    try {
+      this.isLoading = true;
+      const targetWallet = file.recipient_wallet!;
+      const isActuallyFolder = (file as any).is_folder || file._isFolder;
+      const onChainSuccess = await this.contractService.revokeAccess(file.id, targetWallet, isActuallyFolder);
+      
+      if (onChainSuccess) {
+        this.filesService.revokeAccess(file.id, targetWallet, isActuallyFolder).subscribe({
+          next: () => {
+            this.notificationService.success('Pomyślnie odebrano dostęp.');
+            this.loadContents();
+          },
+          error: (err: any) => console.error('[Sync] Failed to update SQL cache:', err)
+        });
+      }
+    } catch (err: any) {
+      this.notificationService.error(this.getReadableError(err));
+    } finally {
+      this.isLoading = false;
+      this.cdr.detectChanges();
+    }
+  }
+
   // --- Metody operacji ---
   async deleteOne(item: any, isFolder: boolean): Promise<void> {
     const label = isFolder ? item.name : this.getFileLabel(item);
@@ -640,6 +871,47 @@ export class FilesListComponent implements OnInit, OnDestroy {
     });
     const result = await firstValueFrom(dialogRef.afterClosed());
     return !!result;
+  }
+
+  isOwner(item: UserFile): boolean {
+    if (!item) return true;
+    if (this.view === 'my') return true;
+    if (this.view === 'my-shares') return true;
+    
+    // W widoku 'shared' sprawdzamy czy włascicielem jest obecny portfel
+    if (item.owner) {
+      const currentWallet = this.authService.getWallet();
+      return item.owner.toLowerCase() === currentWallet?.toLowerCase();
+    }
+    
+    return false;
+  }
+
+  getExpirationInfo(item: UserFile): string {
+    if (!item.expiration) return '';
+    try {
+      const exp = new Date(item.expiration);
+      const now = new Date();
+      
+      // Jeśli data jest w bardzo odległej przyszłości (np. > 50 lat), traktujemy jako bezterminowo
+      const fiftyYearsFromNow = new Date();
+      fiftyYearsFromNow.setFullYear(now.getFullYear() + 50);
+      
+      if (exp > fiftyYearsFromNow) return 'Bezterminowo';
+      if (exp < now) return 'Wygasło';
+      
+      const diffMs = exp.getTime() - now.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 0) return `Pozostało ${diffDays} dni`;
+      
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      if (diffHours > 0) return `Pozostało ${diffHours} godz.`;
+      
+      return 'Wygasa wkrótce';
+    } catch {
+      return '';
+    }
   }
 
   public getReadableError(error: unknown): string {

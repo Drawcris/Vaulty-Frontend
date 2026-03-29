@@ -24,4 +24,13 @@ export class NotificationService {
       panelClass: ['vaulty-snackbar', 'vaulty-snackbar-error']
     });
   }
+
+  warning(message: string): void {
+    this.snackBar.open(message, '×', {
+      duration: 4000,
+      horizontalPosition: 'right',
+      verticalPosition: 'bottom',
+      panelClass: ['vaulty-snackbar', 'vaulty-snackbar-warning']
+    });
+  }
 }

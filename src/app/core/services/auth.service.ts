@@ -229,6 +229,14 @@ export class AuthService {
     return this.authState$.value.isAuthenticated;
   }
 
+  async lookupUser(username: string): Promise<{ wallet: string }> {
+    return this.apiService.getWalletByUsername(username);
+  }
+
+  async searchUsers(query: string): Promise<any[]> {
+    return this.apiService.searchUsers(query);
+  }
+
   hasStoredSession(): boolean {
     return !!this.getStoredToken() && !!this.getStoredWallet();
   }

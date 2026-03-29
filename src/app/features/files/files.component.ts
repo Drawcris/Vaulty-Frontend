@@ -82,26 +82,33 @@ import { WalletService } from '../../core/services/wallet.service';
               <app-upload (uploaded)="onUploadComplete()"></app-upload>
             </div>
 
-            <button type="button" class="sidebar-item active drive-home">
+            <button type="button" 
+                    [class.active]="currentView === 'my'"
+                    class="sidebar-item drive-home"
+                    (click)="setView('my')">
               <mat-icon class="sidebar-icon">home</mat-icon>
               <span>Moje pliki</span>
             </button>
 
-            <button type="button" class="sidebar-item" disabled>
+            <button type="button" 
+                    [class.active]="currentView === 'shared'"
+                    class="sidebar-item" 
+                    (click)="setView('shared')">
               <mat-icon class="sidebar-icon">group</mat-icon>
               <span>Udostępnione mi pliki</span>
-              <span class="sidebar-badge">wkrótce</span>
             </button>
 
-            <button type="button" class="sidebar-item" disabled>
+            <button type="button" 
+                    [class.active]="currentView === 'my-shares'"
+                    class="sidebar-item" 
+                    (click)="setView('my-shares')">
               <mat-icon class="sidebar-icon">folder_shared</mat-icon>
               <span>Pliki, które udostępniam</span>
-              <span class="sidebar-badge">wkrótce</span>
             </button>
           </aside>
 
           <div class="content-grid">
-            <app-files-list></app-files-list>
+            <app-files-list [view]="currentView"></app-files-list>
           </div>
         </div>
       </div>
@@ -375,6 +382,7 @@ import { WalletService } from '../../core/services/wallet.service';
   `]
 })
 export class FilesComponent implements OnInit, OnDestroy {
+  currentView: 'my' | 'shared' | 'my-shares' = 'my';
   walletAddress: string | null = null;
   authState: AuthState = {
     isAuthenticated: false,
@@ -429,6 +437,10 @@ export class FilesComponent implements OnInit, OnDestroy {
 
   onUploadComplete(): void {
     window.dispatchEvent(new CustomEvent('vaulty-files-refresh'));
+  }
+
+  setView(view: 'my' | 'shared' | 'my-shares'): void {
+    this.currentView = view;
   }
 
   getDisplayName(): string {

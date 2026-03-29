@@ -116,6 +116,19 @@ export class ApiService {
     }
   }
 
+  async searchUsers(query: string): Promise<UserProfileResponse[]> {
+    try {
+      return await firstValueFrom(
+        this.http.get<UserProfileResponse[]>(`${this.baseUrl}/users/search`, {
+          params: { q: query }
+        })
+      );
+    } catch (error) {
+      console.error('Failed to search users:', error);
+      throw error;
+    }
+  }
+
   async getWalletByUsername(username: string): Promise<{ wallet: string }> {
     try {
       return await firstValueFrom(

@@ -23,6 +23,8 @@ export class WalletService {
   private readonly CONNECTED_WALLET_KEY = 'vaulty_connected_wallet';
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.Signer | null = null;
+  private connectionPromise: Promise<string> | null = null;
+  private initializationPromise: Promise<boolean> | null = null;
 
   private walletState$ = new BehaviorSubject<WalletState>({
     address: null,
@@ -34,51 +36,91 @@ export class WalletService {
   constructor() {
     this.initializeProvider();
     this.setupEventListeners();
-    void this.restoreConnection();
+    // Nie blokujemy konstruktora, ale zapisujemy stan inicjalizacji
+    this.initializationPromise = this.restoreConnection();
   }
 
   /**
-   * Inicjalizuj provider (MetaMask lub inny Ethereum provider)
+   * Inicjalizuj provider
    */
   private initializeProvider(): void {
     if (!this.isMetaMaskInstalled()) {
-      this.updateState({ error: 'MetaMask not installed' });
+      this.updateState({ error: 'Brak MetaMask' });
       return;
     }
 
     this.provider = new ethers.BrowserProvider(window.ethereum);
   }
 
-  /**
-   * Sprawdź czy MetaMask jest zainstalowany
-   */
   isMetaMaskInstalled(): boolean {
     return typeof window !== 'undefined' && !!window.ethereum;
   }
 
   /**
-   * Połącz z wallet'em
+   * Wrapper z timeoutem dla operacji na portfelu
+   */
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number = 15000): Promise<T> {
+    let timeoutId: any;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Przekroczono czas oczekiwania na MetaMask (timeout). Spróbuj odświeżyć stronę.'));
+      }, timeoutMs);
+    });
+
+    try {
+      const result = await Promise.race([promise, timeoutPromise]);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
+
+  /**
+   * Połącz z walletem (z blokadą przed wyścigiem i timeoutem)
    */
   async connectWallet(): Promise<string> {
+    // Jeśli już połączony, zwróć adres
+    if (this.walletState$.value.isConnected && this.walletState$.value.address) {
+      return this.walletState$.value.address;
+    }
+
+    if (this.connectionPromise) {
+      console.log('[WalletService] Połączenie w toku, czekam...');
+      return this.connectionPromise;
+    }
+
+    this.connectionPromise = this._performConnection();
+    try {
+      return await this.connectionPromise;
+    } finally {
+      this.connectionPromise = null;
+    }
+  }
+
+  private async _performConnection(): Promise<string> {
     try {
       if (!this.provider) {
-        throw new Error('Provider not initialized. Is MetaMask installed?');
+        throw new Error('Provider nie zainicjalizowany. Czy MetaMask jest zainstalowany?');
       }
 
-      // Request dostępu do wallet'a
-      const accounts = await window.ethereum?.request({
-        method: 'eth_requestAccounts'
-      });
+      console.log('[WalletService] Wysyłanie eth_requestAccounts...');
+      // eth_requestAccounts często wisi jeśli MetaMask jest zablokowany
+      const accounts = await this.withTimeout(
+        window.ethereum.request({ method: 'eth_requestAccounts' }),
+        20000 
+      ) as string[];
 
       if (!accounts || accounts.length === 0) {
-        throw new Error('No accounts returned from MetaMask');
+        throw new Error('Nie odnaleziono kont w MetaMask.');
       }
 
       const address = accounts[0];
-      this.signer = await this.provider.getSigner();
+      console.log('[WalletService] Pobieranie signera...');
+      this.signer = await this.withTimeout(this.provider.getSigner(), 5000);
 
-      // Pobierz chain ID
-      const network = await this.provider.getNetwork();
+      const network = await this.withTimeout(this.provider.getNetwork(), 5000);
 
       this.updateState({
         address,
@@ -88,13 +130,11 @@ export class WalletService {
       });
       this.storeConnectedWallet(address);
 
-      console.log(`Connected to wallet: ${address} on chain ${network.chainId}`);
-
       return address;
     } catch (error) {
-      const errorMessage = this.getReadableError(error, 'Failed to connect wallet');
+      const errorMessage = this.getReadableError(error, 'Problem z połączeniem MetaMask');
       this.updateState({ error: errorMessage });
-      throw error;
+      throw new Error(errorMessage);
     }
   }
 
@@ -104,81 +144,73 @@ export class WalletService {
   async signMessage(message: string): Promise<string> {
     try {
       if (!this.signer) {
-        throw new Error('Signer not initialized. Connect wallet first.');
+        this.signer = await this.getSigner();
       }
 
-      const signature = await this.signer.signMessage(message);
-      console.log('Message signed successfully');
+      if (!this.signer) {
+        throw new Error('Brak połączenia z portfelem. Najpierw połącz MetaMask.');
+      }
 
+      console.log('[WalletService] Oczekiwanie na podpis wiadomości...');
+      const signature = await this.withTimeout(
+        this.signer.signMessage(message),
+        30000 // 30 sekund na podpis
+      );
+      
       return signature;
     } catch (error) {
-      const errorMessage = this.getReadableError(error, 'Failed to sign message');
+      const errorMessage = this.getReadableError(error, 'Błąd podpisywania wiadomości');
       this.updateState({ error: errorMessage });
       throw new Error(errorMessage);
     }
   }
 
   /**
-   * Pobierz aktualny adres wallet'a
+   * Pobierz aktualny signer
    */
+  async getSigner(): Promise<ethers.Signer | null> {
+    if (this.signer) return this.signer;
+    if (this.provider) {
+      try {
+        // Unikamy blokady jeśli provider nie odpowiada szybko
+        this.signer = await this.withTimeout(this.provider.getSigner(), 3000);
+        return this.signer;
+      } catch (err) {
+        console.warn('[WalletService] Nie udało się uzyskać signera w czasie:', err);
+        return null;
+      }
+    }
+    return null;
+  }
+
   getWalletAddress(): string | null {
     return this.walletState$.value.address;
   }
 
-  /**
-   * Pobierz stan wallet'a jako observable
-   */
   getWalletState$(): Observable<WalletState> {
     return this.walletState$.asObservable();
   }
 
-  /**
-   * Rozłącz wallet
-   */
   async disconnect(): Promise<void> {
-    try {
-      // Clear signer i provider
-      this.signer = null;
-      this.clearStoredConnection();
-
-      this.updateState({
-        address: null,
-        isConnected: false,
-        chainId: null,
-        error: null
-      });
-
-      console.log('Wallet disconnected');
-    } catch (error) {
-      const errorMessage = this.getReadableError(error, 'Failed to disconnect');
-      this.updateState({ error: errorMessage });
-      throw error;
-    }
+    this.signer = null;
+    this.clearStoredConnection();
+    this.updateState({
+      address: null,
+      isConnected: false,
+      chainId: null,
+      error: null
+    });
   }
 
-  /**
-   * Pobierz chain ID
-   */
-  getChainId(): number | null {
-    return this.walletState$.value.chainId;
-  }
-
-  /**
-   * Sprawdź czy wallet jest podłączony
-   */
   isConnected(): boolean {
     return this.walletState$.value.isConnected;
   }
 
-  /**
-   * Setup event listeners dla zmian w wallet'u
-   */
   private setupEventListeners(): void {
     if (!this.isMetaMaskInstalled()) return;
 
     const ethereum = window.ethereum;
 
-    // Listen na zmianę konta
     ethereum.on('accountsChanged', (accounts: string[]) => {
       if (accounts.length === 0) {
         this.disconnect();
@@ -186,48 +218,35 @@ export class WalletService {
         const address = accounts[0];
         this.storeConnectedWallet(address);
         void this.refreshConnection(address);
-        console.log(`Account changed to: ${address}`);
       }
     });
 
-    // Listen na zmianę sieci
     ethereum.on('chainChanged', (chainId: string) => {
-      const chainIdNum = parseInt(chainId, 16);
-      this.updateState({ chainId: chainIdNum });
-      console.log(`Chain changed to: ${chainIdNum}`);
-      // Opcjonalnie: reload aplikacji
       window.location.reload();
     });
 
-    // Listen na disconnect
     ethereum.on('disconnect', () => {
       this.disconnect();
-      console.log('Wallet disconnected');
     });
   }
 
-  /**
-   * Aktualizuj stan wallet'a
-   */
   private updateState(partial: Partial<WalletState>): void {
     const currentState = this.walletState$.value;
     this.walletState$.next({ ...currentState, ...partial });
   }
 
   async restoreConnection(): Promise<boolean> {
-    if (!this.provider || !window.ethereum) {
-      return false;
-    }
+    if (!this.provider || !window.ethereum) return false;
 
     const storedWallet = this.getStoredConnectedWallet();
-    if (!storedWallet) {
-      return false;
-    }
+    if (!storedWallet) return false;
 
     try {
-      const accounts = await window.ethereum.request({
-        method: 'eth_accounts'
-      });
+      // eth_accounts jest nie-interaktywne, powinno być szybkie
+      const accounts = await this.withTimeout(
+        window.ethereum.request({ method: 'eth_accounts' }),
+        2000
+      );
 
       if (!Array.isArray(accounts) || accounts.length === 0) {
         this.clearStoredConnection();
@@ -235,7 +254,7 @@ export class WalletService {
       }
 
       const matchingAccount = accounts.find(
-        (account: string) => account.toLowerCase() === storedWallet.toLowerCase()
+        (acc: string) => acc.toLowerCase() === storedWallet.toLowerCase()
       );
 
       if (!matchingAccount) {
@@ -246,78 +265,62 @@ export class WalletService {
       await this.refreshConnection(matchingAccount);
       return true;
     } catch (error) {
-      const errorMessage = this.getReadableError(error, 'Failed to restore wallet connection');
-      this.updateState({ error: errorMessage });
+      console.warn('[WalletService] Błąd odtwarzania sesji:', error);
       return false;
     }
   }
 
   private async refreshConnection(address?: string): Promise<void> {
-    if (!this.provider) {
-      return;
+    if (!this.provider) return;
+
+    try {
+      const signer = await this.withTimeout(this.provider.getSigner(), 2000);
+      const network = await this.withTimeout(this.provider.getNetwork(), 2000);
+      const signerAddress = address ?? (await signer.getAddress());
+
+      this.signer = signer;
+      this.updateState({
+        address: signerAddress,
+        isConnected: true,
+        chainId: Number(network.chainId),
+        error: null
+      });
+      this.storeConnectedWallet(signerAddress);
+    } catch (err) {
+      console.warn('[WalletService] Błąd odświeżania połączenia:', err);
     }
-
-    const signer = await this.provider.getSigner();
-    const network = await this.provider.getNetwork();
-    const signerAddress = address ?? (await signer.getAddress());
-
-    this.signer = signer;
-    this.updateState({
-      address: signerAddress,
-      isConnected: true,
-      chainId: Number(network.chainId),
-      error: null
-    });
-    this.storeConnectedWallet(signerAddress);
   }
 
-  private getReadableError(error: unknown, fallback: string): string {
-    if (typeof error === 'object' && error !== null) {
-      const providerError = error as { code?: number; shortMessage?: string; message?: string };
+  private getReadableError(error: any, fallback: string): string {
+    if (!error) return fallback;
 
-      if (providerError.code === 4001) {
-        return 'Podpis lub połączenie zostało anulowane w portfelu.';
-      }
-
-      if (providerError.shortMessage) {
-        return providerError.shortMessage;
-      }
-
-      if (providerError.message) {
-        return providerError.message;
-      }
-    }
-
-    if (error instanceof Error) {
+    // Przechwyć timeout
+    if (error.message && error.message.includes('Przekroczono czas')) {
       return error.message;
     }
 
-    return fallback;
+    if (typeof error === 'object') {
+      const code = error.code || (error.info && error.info.error && error.info.error.code);
+      if (code === 4001 || code === -32603) {
+        return 'Akcja została przerwana w portfelu lub portfel jest zablokowany.';
+      }
+      if (code === -32002) {
+        return 'MetaMask ma już aktywne żądanie. Sprawdź ikonę lisa w przeglądarce.';
+      }
+    }
+
+    return error.message || fallback;
   }
 
   private storeConnectedWallet(address: string): void {
-    try {
-      localStorage.setItem(this.CONNECTED_WALLET_KEY, address);
-    } catch (error) {
-      console.error('Failed to store connected wallet:', error);
-    }
+    localStorage.setItem(this.CONNECTED_WALLET_KEY, address);
   }
 
   private getStoredConnectedWallet(): string | null {
-    try {
-      return localStorage.getItem(this.CONNECTED_WALLET_KEY);
-    } catch (error) {
-      console.error('Failed to read connected wallet:', error);
-      return null;
-    }
+    return localStorage.getItem(this.CONNECTED_WALLET_KEY);
   }
 
   private clearStoredConnection(): void {
-    try {
-      localStorage.removeItem(this.CONNECTED_WALLET_KEY);
-    } catch (error) {
-      console.error('Failed to clear connected wallet:', error);
-    }
+    localStorage.removeItem(this.CONNECTED_WALLET_KEY);
   }
 }
-

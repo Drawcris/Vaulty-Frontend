@@ -149,7 +149,8 @@
         <div class="name-column">Nazwa</div>
         <div class="encryption-column" style="width: 100px;">Własności</div>
         <div class="date-column">Data</div>
-        <div class="owner-column">Właściciel</div>
+        <div class="owner-column" *ngIf="view !== 'my-shares'">Właściciel</div>
+        <div class="owner-column" *ngIf="view === 'my-shares'">Odbiorca</div>
         <div class="actions-column"></div>
       </div>
 
@@ -178,7 +179,15 @@
                 {{ item._isFolder ? 'folder' : 'description' }}
             </mat-icon>
             <div class="file-copy">
-              <div class="file-title">{{ item._isFolder ? item.name : getFileLabel(item) }}</div>
+              <div class="file-title">
+                {{ item._isFolder ? item.name : getFileLabel(item) }}
+                <span class="expiry-badge" 
+                      *ngIf="getExpirationInfo(item)" 
+                      [class.expired]="getExpirationInfo(item) === 'Wygasło'"
+                      [class.indefinite]="getExpirationInfo(item) === 'Bezterminowo'">
+                  {{ getExpirationInfo(item) }}
+                </span>
+              </div>
               <div class="file-subtitle" *ngIf="!item._isFolder">ID: {{ item.id }}</div>
             </div>
           </div>
@@ -193,19 +202,29 @@
           </div>
 
           <div class="owner-column owner-text">
-             <span *ngIf="!item._isUpDir">{{ getOwnerLabel() }}</span>
+             <span *ngIf="!item._isUpDir">
+               <ng-container *ngIf="view !== 'my-shares'">
+                 {{ item.owner_username || getOwnerLabel(item._isFolder ? null : item) }}
+               </ng-container>
+               <ng-container *ngIf="view === 'my-shares'">
+                 {{ item.recipient_username || item.recipient_wallet | slice:0:10 }}...
+               </ng-container>
+             </span>
           </div>
 
           <div class="actions-column">
             <div class="hover-actions" *ngIf="!item._isUpDir">
-              <button
+              <!-- Share: Only for 'my' view and ONLY for files -->
+              <button *ngIf="view === 'my' && !item._isFolder"
                 mat-icon-button
                 class="row-action"
-                disabled
-                matTooltip="Udostępnij (wkrótce)"
+                (click)="shareFile(item)"
+                matTooltip="Udostępnij plik on-chain"
                 aria-label="Udostępnij">
                 <mat-icon class="icon-glyph">person_add</mat-icon>
               </button>
+
+              <!-- Download: Always available -->
               <button
                 mat-icon-button
                 class="row-action"
@@ -214,20 +233,42 @@
                 aria-label="Pobierz">
                 <mat-icon class="icon-glyph">download</mat-icon>
               </button>
-              <button
+
+              <!-- Rename: Only for 'my' view -->
+              <button *ngIf="view === 'my'"
                 mat-icon-button
                 class="row-action"
                 (click)="renameOne(item, item._isFolder)"
                 matTooltip="Zmień nazwę">
                 <mat-icon class="icon-glyph">edit</mat-icon>
               </button>
-              <button
+
+              <!-- Delete: Only for 'my' view -->
+              <button *ngIf="view === 'my'"
                 mat-icon-button
                 class="row-action danger"
                 (click)="deleteOne(item, item._isFolder)"
                 [disabled]="isDeleting"
                 matTooltip="Usuń">
                 <mat-icon class="icon-glyph">delete</mat-icon>
+              </button>
+
+              <!-- Edit Share: Only for 'my-shares' view -->
+              <button *ngIf="view === 'my-shares'"
+                mat-icon-button
+                class="row-action"
+                (click)="editShare(item)"
+                matTooltip="Edytuj czas wygaśnięcia">
+                <mat-icon class="icon-glyph">edit_calendar</mat-icon>
+              </button>
+
+              <!-- Revoke Share: Only for 'my-shares' view -->
+              <button *ngIf="view === 'my-shares'"
+                mat-icon-button
+                class="row-action danger"
+                (click)="revokeShare(item)"
+                matTooltip="Odbierz dostęp">
+                <mat-icon class="icon-glyph">person_remove</mat-icon>
               </button>
             </div>
 
@@ -271,16 +312,19 @@
 
     <div *ngIf="activeMenuFile" class="menu-divider"></div>
 
-    <button mat-menu-item (click)="renameOne(activeMenuFolder || activeMenuFile, !!activeMenuFolder)">
-      <mat-icon>edit</mat-icon>
-      <span>Zmień nazwę</span>
-    </button>
-    <button mat-menu-item (click)="contextMenuMove()">
-      <mat-icon>drive_file_move</mat-icon>
-      <span>Przenieś do...</span>
-    </button>
+    <!-- Actions only for 'my' view -->
+    <ng-container *ngIf="view === 'my'">
+      <button mat-menu-item (click)="renameOne(activeMenuFolder || activeMenuFile, !!activeMenuFolder)">
+        <mat-icon>edit</mat-icon>
+        <span>Zmień nazwę</span>
+      </button>
+      <button mat-menu-item (click)="contextMenuMove()">
+        <mat-icon>drive_file_move</mat-icon>
+        <span>Przenieś do...</span>
+      </button>
 
-    <div class="menu-divider"></div>
+      <div class="menu-divider"></div>
+    </ng-container>
 
     <button mat-menu-item *ngIf="activeMenuFolder" (click)="downloadFolder(activeMenuFolder)">
       <mat-icon>download</mat-icon>
@@ -293,16 +337,32 @@
       <mat-icon>download</mat-icon>
       <span>Pobierz</span>
     </button>
-    <button mat-menu-item disabled>
-      <mat-icon>person_add</mat-icon>
-      <span>Udostępnij</span>
-    </button>
+    
+    <!-- Share/Delete: Only for 'my' view -->
+    <ng-container *ngIf="view === 'my'">
+      <button mat-menu-item *ngIf="activeMenuFile" (click)="shareFile(activeMenuFile)">
+        <mat-icon>person_add</mat-icon>
+        <span>Udostępnij</span>
+      </button>
 
-    <div class="menu-divider"></div>
+      <div class="menu-divider"></div>
 
-    <button mat-menu-item (click)="contextMenuDelete()" [disabled]="isDeleting">
-      <mat-icon>delete</mat-icon>
-      <span>Usuń</span>
-    </button>
+      <button mat-menu-item (click)="contextMenuDelete()" [disabled]="isDeleting">
+        <mat-icon>delete</mat-icon>
+        <span>Usuń</span>
+      </button>
+    </ng-container>
+
+    <!-- Actions for 'my-shares' view -->
+    <ng-container *ngIf="view === 'my-shares'">
+        <button mat-menu-item (click)="editShare(activeMenuFile!)">
+          <mat-icon>edit_calendar</mat-icon>
+          <span>Edytuj czas wygaśnięcia</span>
+        </button>
+        <button mat-menu-item (click)="revokeShare(activeMenuFile!)" class="danger-action">
+          <mat-icon style="color: #d93025;">person_remove</mat-icon>
+          <span style="color: #d93025;">Odbierz dostęp</span>
+        </button>
+    </ng-container>
   </mat-menu>
 </mat-card>

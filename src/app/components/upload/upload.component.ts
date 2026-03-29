@@ -13,6 +13,7 @@ import { CryptoService } from '../../core/services/crypto.service';
 import { FilesService, UploadFileResponse } from '../../core/services/files.service';
 import { sha256 } from '../../utils/hash.util';
 import { UploadNameDialogComponent } from './upload-name-dialog.component';
+import { ContractService } from '../../core/services/contract.service';
 
 @Component({
   selector: 'app-upload',
@@ -52,6 +53,7 @@ export class UploadComponent {
     private authService: AuthService,
     private cryptoService: CryptoService,
     private filesService: FilesService,
+    private contractService: ContractService,
     private dialog: MatDialog
   ) {}
 
@@ -121,6 +123,16 @@ export class UploadComponent {
           `${file.name}.vaulty.enc`
         )
       );
+
+      this.progressValue = 92;
+      this.progressLabel = 'Rejestracja on-chain';
+      
+      // Wywołaj smart contract
+      const blockchainSuccess = await this.contractService.registerResource(response.file_id, false, response.cid);
+      
+      if (!blockchainSuccess) {
+        throw new Error('Plik został przesłany, ale rejestracja na blockchainie nie powiodła się. Pamiętaj, że bez tego plik nie będzie widoczny jako Twój on-chain.');
+      }
 
       this.progressValue = 100;
       this.progressLabel = 'Gotowe';

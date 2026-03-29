@@ -8,9 +8,26 @@ export interface UserFile {
   id: number;
   filename?: string | null;
   cid: string;
+  owner?: string | null;
+  owner_username?: string | null;
+  recipient_wallet?: string | null;
+  recipient_username?: string | null;
   encryption_type: string;
   upload_date: string;
+  expiration?: string | null;
   folder_id?: number | null;
+  _isFolder?: boolean;
+}
+
+export interface ShareListItem {
+  file_id?: number | null;
+  folder_id?: number | null;
+  is_folder: boolean;
+  filename: string;
+  recipient_wallet: string;
+  recipient_username?: string | null;
+  expiration?: string | null;
+  granted_at: string;
 }
 
 export interface UserFolder {
@@ -90,6 +107,10 @@ export class FilesService {
     return this.http.get<UserFile[]>(`${this.filesApiUrl}/my`, { params });
   }
 
+  getSharedFiles(): Observable<UserFile[]> {
+    return this.http.get<UserFile[]>(`${this.filesApiUrl}/shared`);
+  }
+
   deleteFile(fileId: number): Observable<DeleteFileResponse> {
     return this.http.delete<DeleteFileResponse>(`${this.filesApiUrl}/${fileId}`);
   }
@@ -129,5 +150,27 @@ export class FilesService {
 
   moveItems(request: MoveItemRequest): Observable<any> {
     return this.http.post(`${this.foldersApiUrl}/move`, request);
+  }
+
+  // ==== Access API (SQL Cache) ====
+  grantAccess(id: number, wallet: string, expiration: string | null = null, isFolder: boolean = false): Observable<any> {
+    return this.http.post(`${environment.API_BASE_URL}/access/grant`, {
+      file_id: isFolder ? null : id,
+      folder_id: isFolder ? id : null,
+      wallet: wallet,
+      expiration: expiration
+    });
+  }
+
+  revokeAccess(id: number, wallet: string, isFolder: boolean = false): Observable<any> {
+    return this.http.post(`${environment.API_BASE_URL}/access/revoke`, {
+      file_id: isFolder ? null : id,
+      folder_id: isFolder ? id : null,
+      wallet: wallet
+    });
+  }
+
+  getMyShares(): Observable<ShareListItem[]> {
+    return this.http.get<ShareListItem[]>(`${environment.API_BASE_URL}/access/my-shares`);
   }
 }
