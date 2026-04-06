@@ -166,6 +166,46 @@ export class WalletService {
   }
 
   /**
+   * Pobierz klucz publiczny eip-1024
+   */
+  async getEncryptionPublicKey(address: string): Promise<string> {
+    try {
+      console.log('[WalletService] Oczekiwanie na publiczny klucz szyfrowania...');
+      const key = await this.withTimeout(
+        window.ethereum.request({
+          method: 'eth_getEncryptionPublicKey',
+          params: [address],
+        }),
+        30000
+      );
+      return key as string;
+    } catch (error) {
+      const errorMessage = this.getReadableError(error, 'Błąd pobierania klucza publicznego');
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Odszyfruj klucz za pomocą eip-1024
+   */
+  async decryptEncryptionKey(encryptedDataHex: string, address: string): Promise<string> {
+    try {
+      console.log('[WalletService] Oczekiwanie na odszyfrowanie wiadomości przez MetaMask...');
+      const decrypted = await this.withTimeout(
+        window.ethereum.request({
+          method: 'eth_decrypt',
+          params: [encryptedDataHex, address],
+        }),
+        30000
+      );
+      return decrypted as string;
+    } catch (error) {
+      const errorMessage = this.getReadableError(error, 'Błąd podczas odszyfrowania pliku przez portfel');
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
    * Pobierz aktualny signer
    */
   async getSigner(): Promise<ethers.Signer | null> {

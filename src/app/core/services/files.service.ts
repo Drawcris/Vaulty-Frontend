@@ -85,6 +85,7 @@ export class FilesService {
     hash: string,
     encryptionType: string,
     filename: string,
+    encryptedCek: string,
     folderId: number | null = null,
     fileName: string = 'encrypted-file.vaulty.enc'
   ): Observable<UploadFileResponse> {
@@ -93,6 +94,7 @@ export class FilesService {
     formData.append('hash', hash);
     formData.append('filename', filename);
     formData.append('encryption_type', encryptionType);
+    formData.append('encrypted_cek', encryptedCek);
     if (folderId !== null) {
       formData.append('folder_id', folderId.toString());
     }
@@ -153,13 +155,17 @@ export class FilesService {
   }
 
   // ==== Access API (SQL Cache) ====
-  grantAccess(id: number, wallet: string, expiration: string | null = null, isFolder: boolean = false): Observable<any> {
-    return this.http.post(`${environment.API_BASE_URL}/access/grant`, {
+  grantAccess(id: number, wallet: string, expiration: string | null = null, isFolder: boolean = false, encryptedCek?: string): Observable<any> {
+    const body: any = {
       file_id: isFolder ? null : id,
       folder_id: isFolder ? id : null,
       wallet: wallet,
       expiration: expiration
-    });
+    };
+    if (encryptedCek) {
+      body.encrypted_cek = encryptedCek;
+    }
+    return this.http.post(`${environment.API_BASE_URL}/access/grant`, body);
   }
 
   revokeAccess(id: number, wallet: string, isFolder: boolean = false): Observable<any> {

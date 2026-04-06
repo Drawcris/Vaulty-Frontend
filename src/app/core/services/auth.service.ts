@@ -139,10 +139,18 @@ export class AuthService {
       console.log('[Auth] Step 2: Signing message...');
       const signature = await this.walletService.signMessage(challengeResponse.challenge);
 
-      console.log('[Auth] Step 3: Verifying signature...');
-      const verifyResponse = await this.apiService.verifySignature(wallet, signature);
+      console.log('[Auth] Step 3: Getting public encryption key...');
+      let encryptionPublicKey: string | undefined;
+      try {
+        encryptionPublicKey = await this.walletService.getEncryptionPublicKey(wallet);
+      } catch (err) {
+        console.warn('[Auth] Failed to get encryption public key, proceeding without it', err);
+      }
 
-      console.log('[Auth] Step 4: Storing token...');
+      console.log('[Auth] Step 4: Verifying signature...');
+      const verifyResponse = await this.apiService.verifySignature(wallet, signature, encryptionPublicKey);
+
+      console.log('[Auth] Step 5: Storing token...');
       const token = verifyResponse.token;
       this.storeToken(token);
       this.storeWallet(wallet);
@@ -181,7 +189,18 @@ export class AuthService {
   async setUsername(username: string): Promise<void> {
     try {
       this.updateState({ loading: true, error: null });
-      const profile = await this.apiService.setUsername(username);
+      
+      const wallet = this.getWallet();
+      let encryptionPublicKey: string | undefined;
+      if (wallet) {
+        try {
+          encryptionPublicKey = await this.walletService.getEncryptionPublicKey(wallet);
+        } catch (err) {
+          console.warn('[Auth] Nie udało się pobrać klucza szyfrowania przy setUsername', err);
+        }
+      }
+
+      const profile = await this.apiService.setUsername(username, encryptionPublicKey);
 
       this.updateState({
         username: profile.username ?? username,

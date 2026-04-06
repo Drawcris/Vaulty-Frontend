@@ -16,6 +16,7 @@ export interface ChallengeResponse {
 export interface VerifySignatureRequest {
   wallet: string;
   signature: string;
+  encryption_public_key?: string;
 }
 
 export interface VerifySignatureResponse {
@@ -65,13 +66,14 @@ export class ApiService {
     }
   }
 
-  async verifySignature(wallet: string, signature: string): Promise<VerifySignatureResponse> {
+  async verifySignature(wallet: string, signature: string, encryptionPublicKey?: string): Promise<VerifySignatureResponse> {
     try {
+      const payload: any = { wallet, signature };
+      if (encryptionPublicKey) {
+        payload.encryption_public_key = encryptionPublicKey;
+      }
       const response = await firstValueFrom(
-        this.http.post<VerifySignatureResponse>(`${this.baseUrl}/auth/verify`, {
-          wallet,
-          signature
-        })
+        this.http.post<VerifySignatureResponse>(`${this.baseUrl}/auth/verify`, payload)
       );
       console.log('Signature verified successfully');
       return response;
@@ -103,12 +105,14 @@ export class ApiService {
     }
   }
 
-  async setUsername(username: string): Promise<UserProfileResponse> {
+  async setUsername(username: string, encryptionPublicKey?: string): Promise<UserProfileResponse> {
     try {
+      const payload: any = { username };
+      if (encryptionPublicKey) {
+        payload.encryption_public_key = encryptionPublicKey;
+      }
       return await firstValueFrom(
-        this.http.post<UserProfileResponse>(`${this.baseUrl}/users/set-username`, {
-          username
-        })
+        this.http.post<UserProfileResponse>(`${this.baseUrl}/users/set-username`, payload)
       );
     } catch (error) {
       console.error('Failed to set username:', error);
@@ -184,13 +188,21 @@ export class ApiService {
     }
   }
 
-  async downloadFileRaw(fileId: number): Promise<Blob> {
+  async downloadFileRaw(fileId: number): Promise<{ blob: Blob, encryptedCek: string | null }> {
     try {
-      return await firstValueFrom(
+      const response = await firstValueFrom(
         this.http.get(`${this.baseUrl}/files/${fileId}/download/raw`, {
+          observe: 'response',
           responseType: 'blob'
         })
       );
+      
+      const encryptedCek = response.headers.get('X-Encrypted-CEK');
+      
+      return {
+        blob: response.body as Blob,
+        encryptedCek
+      };
     } catch (error) {
       console.error('Failed to download file:', error);
       throw error;
@@ -219,7 +231,7 @@ export class ApiService {
     }
   }
 
-  async grantAccess(fileId: number, wallet: string, expiration?: string): Promise<any> {
+  async grantAccess(fileId: number, wallet: string, expiration?: string, encryptedCek?: string): Promise<any> {
     try {
       const payload: any = {
         file_id: fileId,
@@ -228,12 +240,28 @@ export class ApiService {
       if (expiration) {
         payload.expiration = expiration;
       }
+      if (encryptedCek) {
+        payload.encrypted_cek = encryptedCek;
+      }
 
       return await firstValueFrom(
         this.http.post(`${this.baseUrl}/access/grant`, payload)
       );
     } catch (error) {
       console.error('Failed to grant access:', error);
+      throw error;
+    }
+  }
+
+  async getUserPublicKey(walletOrUsername: string): Promise<{ wallet: string; encryption_public_key: string }> {
+    try {
+      return await firstValueFrom(
+        this.http.get<{ wallet: string; encryption_public_key: string }>(
+          `${this.baseUrl}/users/public-key/${walletOrUsername}`
+        )
+      );
+    } catch (error) {
+      console.error('Failed to get user public key:', error);
       throw error;
     }
   }

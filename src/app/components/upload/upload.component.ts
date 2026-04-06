@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Output, HostListener } from '@angular/core';
+import { Component, EventEmitter, Output, HostListener, ChangeDetectorRef } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { MatButtonModule } from '@angular/material/button';
@@ -14,6 +14,7 @@ import { FilesService, UploadFileResponse } from '../../core/services/files.serv
 import { sha256 } from '../../utils/hash.util';
 import { UploadNameDialogComponent } from './upload-name-dialog.component';
 import { ContractService } from '../../core/services/contract.service';
+import { WalletService } from '../../core/services/wallet.service';
 
 @Component({
   selector: 'app-upload',
@@ -54,7 +55,9 @@ export class UploadComponent {
     private cryptoService: CryptoService,
     private filesService: FilesService,
     private contractService: ContractService,
-    private dialog: MatDialog
+    private walletService: WalletService,
+    private dialog: MatDialog,
+    private cdr: ChangeDetectorRef
   ) {}
 
   async onFileSelected(event: Event): Promise<void> {
@@ -80,6 +83,7 @@ export class UploadComponent {
       this.uploadError = '';
       this.lastDebugFileName = '';
       this.activeFileName = chosenName;
+      this.cdr.detectChanges();
 
       const dotIndex = file.name.lastIndexOf('.');
       const originalExt = dotIndex > 0 ? file.name.substring(dotIndex) : '';
@@ -96,7 +100,10 @@ export class UploadComponent {
 
       this.progressValue = 30;
       this.progressLabel = 'Szyfrowanie AES-256';
-      const encryptedBytes = await this.cryptoService.encryptFile(fileBuffer, wallet);
+      this.cdr.detectChanges();
+      
+      const cek = this.cryptoService.generateCEK();
+      const encryptedBytes = await this.cryptoService.encryptFile(fileBuffer, cek);
 
       const encryptedBlob = new Blob([encryptedBytes as any], {
         type: 'application/octet-stream'
@@ -105,7 +112,18 @@ export class UploadComponent {
 
       this.progressValue = 55;
       this.progressLabel = 'Liczenie SHA-256';
+      this.cdr.detectChanges();
       const hash = await sha256(encryptedBuffer);
+
+      this.progressValue = 68;
+      this.progressLabel = 'Pakowanie klucza pliku (CEK)';
+      let pubKey: string;
+      try {
+        pubKey = await this.walletService.getEncryptionPublicKey(wallet);
+      } catch (err) {
+        throw new Error('Odmowa z MetaMask: musisz pozwolić na użycie klucza szyfrowania.');
+      }
+      const encryptedCek = this.cryptoService.wrapCEK(cek, pubKey);
 
       this.progressValue = 72;
       this.progressLabel = 'Zapisywanie kopii testowej';
@@ -119,6 +137,7 @@ export class UploadComponent {
           hash,
           'AES_256',
           finalFilename,
+          encryptedCek,
           this.currentFolderId,
           `${file.name}.vaulty.enc`
         )
@@ -126,6 +145,7 @@ export class UploadComponent {
 
       this.progressValue = 92;
       this.progressLabel = 'Rejestracja on-chain';
+      this.cdr.detectChanges();
       
       // Wywołaj smart contract
       const blockchainSuccess = await this.contractService.registerResource(response.file_id, false, response.cid);

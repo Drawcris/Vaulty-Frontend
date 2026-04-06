@@ -31,6 +31,7 @@ import { DownloadService, DownloadProgress } from '../../core/services/download.
 import { FilesService, UserFile, UserFolder, FolderBreadcrumb } from '../../core/services/files.service';
 import { ContractService } from '../../core/services/contract.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { WalletService } from '../../core/services/wallet.service';
 
 @Component({
   selector: 'app-files-list',
@@ -92,6 +93,7 @@ export class FilesListComponent implements OnInit, OnDestroy {
     private filesService: FilesService,
     private contractService: ContractService,
     private notificationService: NotificationService,
+    private walletService: WalletService,
     private dialog: MatDialog,
     private cdr: ChangeDetectorRef
   ) {}
@@ -452,20 +454,16 @@ export class FilesListComponent implements OnInit, OnDestroy {
       this.downloadProgress = { current: 10, total: 100, filename: item.filename ?? `Plik #${item.id}` };
       this.cdr.detectChanges();
 
-      const blob = await this.apiService.downloadFileRaw(item.id);
-      const encryptedData = await blob.arrayBuffer();
-
-      this.downloadProgress = { current: 50, total: 100, filename: 'Próba deszyfrowania...' };
+      this.downloadProgress = { current: 50, total: 100, filename: 'Próba deszyfrowania przez MetaMask...' };
       this.cdr.detectChanges();
 
       try {
-        const decrypted = await this.cryptoService.decryptFile(encryptedData, wallet);
+        const decrypted = await this.downloadService.downloadAndDecrypt(item, wallet);
         this.saveFile(decrypted, this.getFileLabel(item));
         this.notificationService.success(`Pobrano i odszyfrowano plik.`);
       } catch (decryptErr: any) {
-        console.warn('[Download] Decryption failed, saving encrypted:', decryptErr);
-        this.saveFile(new Uint8Array(encryptedData), this.getFileLabel(item) + '.vaulty.enc');
-        this.notificationService.warning('Pobrano zaszyfrowany plik (wymaga Etapu 3 do otwarcia).');
+        console.warn('[Download] Decryption failed:', decryptErr);
+        this.notificationService.error(`Błąd deszyfrowania: ${this.getReadableError(decryptErr)}`);
       }
     } catch (err: any) {
       console.error('[Download] Error:', err);
@@ -572,22 +570,61 @@ export class FilesListComponent implements OnInit, OnDestroy {
         this.isLoading = true;
         let targetWallet = result.walletAddress;
 
-        // Jeśli to nie jest adres (prawdopodobnie username), spróbuj rozwiązać
+        // Rozwiąż username → wallet jeśli potrzeba
         if (!targetWallet.startsWith('0x') || targetWallet.length !== 42) {
           try {
             const resolved = await this.authService.lookupUser(targetWallet);
             targetWallet = resolved.wallet;
-            this.notificationService.success(`Znaleziono użytkownika: ${targetWallet.substring(0, 8)}...`);
           } catch (err: any) {
-            this.notificationService.error(`Nie znaleziono użytkownika o nazwie "${targetWallet}"`);
+            this.notificationService.error(`Nie znaleziono użytkownika o nazwie "${result.walletAddress}"`);
             this.isLoading = false;
             return;
           }
         }
 
+        // Pobierz klucz publiczny odbiorcy
+        let recipientPublicKey: string | undefined;
+        if (!file._isFolder) {
+          try {
+            const keyInfo = await this.apiService.getUserPublicKey(targetWallet);
+            recipientPublicKey = keyInfo.encryption_public_key;
+          } catch (err) {
+            this.notificationService.warning('Odbiorca nie ma klucza szyfrowania – plik zostanie udostępniony bez CEK (stary format).');
+          }
+        }
+
+        // Zaszyfruj CEK dla odbiorcy (tylko dla plików, nie folderów)
+        let encryptedCekForRecipient: string | undefined;
+        if (!file._isFolder && recipientPublicKey) {
+          const ownerWallet = this.authService.getWallet()!;
+          try {
+            // 1. Pobierz swój zaszyfrowany CEK z backendu (raw download + header)
+            const downloadResult = await this.apiService.downloadFileRaw(file.id);
+            if (!downloadResult.encryptedCek) {
+              throw new Error('Brak zaszyfrowanego klucza pliku (CEK). Plik może być w starym formacie.');
+            }
+            // 2. Odszyfrowaj swój CEK przez MetaMask
+            this.notificationService.warning('MetaMask: odszyfrowywanie klucza pliku...');
+            const rawCekBase64 = await this.walletService.decryptEncryptionKey(downloadResult.encryptedCek, ownerWallet);
+            const cek = this.cryptoService.parseDecryptedCEK(rawCekBase64);
+
+            // 3. Zaszyfruj CEK kluczem publicznym odbiorcy
+            encryptedCekForRecipient = this.cryptoService.wrapCEK(cek, recipientPublicKey);
+          } catch (err: any) {
+            if (err?.message?.includes('User denied')) {
+              this.notificationService.error('Odmowa w MetaMask – nie można udostępnić pliku.');
+              this.isLoading = false;
+              return;
+            }
+            console.warn('[Share] Failed to wrap CEK for recipient:', err);
+            this.notificationService.warning('Nie udało się zaszyfrować klucza dla odbiorcy. Udostępnianie bez E2EE CEK.');
+          }
+        }
+
+        // Rejestracja on-chain
         const onChainSuccess = await this.contractService.grantAccess(
-          file.id, 
-          targetWallet, 
+          file.id,
+          targetWallet,
           result.expiryDays,
           file._isFolder
         );
@@ -595,10 +632,11 @@ export class FilesListComponent implements OnInit, OnDestroy {
         if (onChainSuccess) {
           const expiryTs = Math.floor(Date.now() / 1000) + (result.expiryDays * 24 * 60 * 60);
           this.filesService.grantAccess(
-            file.id, 
-            targetWallet, 
+            file.id,
+            targetWallet,
             new Date(expiryTs * 1000).toISOString(),
-            file._isFolder
+            file._isFolder,
+            encryptedCekForRecipient
           ).subscribe({
             next: () => {
               this.notificationService.success(`Pomyślnie udostępniono ${file._isFolder ? 'folder' : 'plik'}.`);

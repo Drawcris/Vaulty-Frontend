@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { ApiService } from './api.service';
 import { CryptoService } from './crypto.service';
 import { FilesService, UserFile, UserFolder, FolderContentResponse } from './files.service';
+import { WalletService } from './wallet.service';
 
 export interface DownloadProgress {
   current: number;
@@ -20,16 +21,25 @@ export class DownloadService {
   constructor(
     private apiService: ApiService,
     private cryptoService: CryptoService,
-    private filesService: FilesService
+    private filesService: FilesService,
+    private walletService: WalletService
   ) {}
 
   /**
    * Pobiera i odszyfrowuje jeden plik, zwraca Uint8Array
    */
   async downloadAndDecrypt(file: UserFile, wallet: string): Promise<Uint8Array> {
-    const blob = await this.apiService.downloadFileRaw(file.id);
-    const encryptedData = await blob.arrayBuffer();
-    return this.cryptoService.decryptFile(encryptedData, wallet);
+    const result = await this.apiService.downloadFileRaw(file.id);
+    const encryptedData = await result.blob.arrayBuffer();
+
+    let cek: Uint8Array;
+    if (!result.encryptedCek) {
+      throw new Error('Brak zaszyfrowanego klucza pliku. Prawdopodobnie stary format (bez hybrydowego E2EE).');
+    }
+    const decryptedCekBase64 = await this.walletService.decryptEncryptionKey(result.encryptedCek, wallet);
+    cek = this.cryptoService.parseDecryptedCEK(decryptedCekBase64);
+
+    return this.cryptoService.decryptFile(encryptedData, cek);
   }
 
   /**
